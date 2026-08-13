@@ -1,0 +1,31 @@
+# Rebuilds the program reproducibly and asserts the deployed binary is that
+# build. Manual, plus weekly, because the thing it catches is drift rather than
+# a change: a deploy made from an uncommitted working tree looks completely
+# normal until somebody asks what is actually running.
+#
+# No secrets. It reads the chain and builds from the checked-out source, so
+# there is nothing here worth stealing and nothing to scope.
+
+name: Verify deployed program
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Sundays, early. Nothing here is urgent; the point is that it runs at all.
+    - cron: "17 4 * * 0"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install solana-verify
+        run: cargo install solana-verify --locked
+      - name: Reproducible build
+        run: solana-verify build --library-name streamed_coin
+              # Split from the comparison so a failure says which half broke: a build
+      # that cannot run and a build that does not match are different problems.
+      - name: Compare against the deployed program
+        run: node scripts/verify-program.mjs

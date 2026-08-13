@@ -1,0 +1,91 @@
+# Deploys the curve program to Solana devnet. Manual trigger only — nothing
+# deploys a program automatically.
+#
+# Required repo secrets:
+#   DEVNET_PROGRAM_KEYPAIR  - solana keypair JSON whose pubkey IS the program id
+#                             (must match declare_id! in lib.rs)
+#   DEVNET_DEPLOYER_KEYPAIR - solana keypair JSON that pays for the deploy;
+#                             fund it at faucet.solana.com first (~4 SOL)
+#
+# Both are devnet-only keys with no mainnet value. The job refuses to run with
+# an underfunded deployer and prints the measured cost when it succeeds.
+#
+# The secrets are consumed through stdin and process substitution and are never
+# written to the runner's filesystem — see the note above the Preflight step.
+
+name: Deploy program to devnet
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+          key: sbf
+      - name: Install Solana toolchain
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v2.2.20/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+      # ⛔ THE KEYPAIRS NEVER TOUCH THE FILESYSTEM, and never enter a step that
+      # does not need them.
+      #
+      # The obvious shape — write both secrets to /tmp, then run the rest of the
+      # job — is what this used to do, and it is worse in two independent ways.
+      # A file outlives the command that needed it, so it is still sitting there
+      # while `cargo build-sbf` runs every build script in the dependency tree;
+      # any one of them can read it. And on a self-hosted runner the filesystem
+      # outlives the job entirely.
+      #
+      # Both are avoidable. `solana-keygen` and every signer argument accept
+      # `stdin://`, and `--program-id`/`--keypair` accept a process
+      # substitution, which is a pipe on /dev/fd rather than a file. `printf` is
+      # a bash builtin, so the secret never appears in any process's argv
+      # either. GitHub masks these values in logs on top of that.
+      - name: Preflight
+        env:
+          DEVNET_PROGRAM_KEYPAIR: ${{ secrets.DEVNET_PROGRAM_KEYPAIR }}
+          DEVNET_DEPLOYER_KEYPAIR: ${{ secrets.DEVNET_DEPLOYER_KEYPAIR }}
+        run: |
+          PROGRAM_ID=$(printf '%s' "$DEVNET_PROGRAM_KEYPAIR" | solana-keygen pubkey stdin://)
+          DEPLOYER=$(printf '%s' "$DEVNET_DEPLOYER_KEYPAIR" | solana-keygen pubkey stdin://)
+          echo "program id: $PROGRAM_ID"
+          echo "deployer:   $DEPLOYER"
+          grep -q "$PROGRAM_ID" programs/streamed_coin/src/lib.rs || {
+            echo "declare_id! does not match DEVNET_PROGRAM_KEYPAIR — run 'npm run program:id'"; exit 1; }
+          BALANCE=$(solana balance "$DEPLOYER" --url https://api.devnet.solana.com | cut -d' ' -f1)
+          echo "deployer balance: $BALANCE SOL"
+          awk "BEGIN{exit !($BALANCE >= 3.5)}" || {
+            echo "deployer needs at least 3.5 SOL — fund $DEPLOYER at faucet.solana.com"; exit 1; }
+          echo "BALANCE_BEFORE=$BALANCE" >> "$GITHUB_ENV"
+          echo "DEPLOYER_PUBKEY=$DEPLOYER" >> "$GITHUB_ENV"
+      # Deliberately no secrets in this step's environment: it is the one that
+      # runs third-party code.
+      - name: Build the program
+        run: cargo build-sbf
+        working-directory: programs/streamed_coin
+      - name: Deploy
+        env:
+          DEVNET_PROGRAM_KEYPAIR: ${{ secrets.DEVNET_PROGRAM_KEYPAIR }}
+          DEVNET_DEPLOYER_KEYPAIR: ${{ secrets.DEVNET_DEPLOYER_KEYPAIR }}
+        run: |
+          solana program deploy target/deploy/streamed_coin.so \
+            --program-id <(printf '%s' "$DEVNET_PROGRAM_KEYPAIR") \
+            --keypair <(printf '%s' "$DEVNET_DEPLOYER_KEYPAIR") \
+            --url https://api.devnet.solana.com \
+            --commitment confirmed
+      - name: Measure the cost
+        run: |
+          DEPLOYER="$DEPLOYER_PUBKEY"
+          BALANCE_AFTER=$(solana balance "$DEPLOYER" --url https://api.devnet.solana.com | cut -d' ' -f1)
+          SIZE=$(stat -c%s target/deploy/streamed_coin.so)
+          echo "artifact size:     $SIZE bytes"
+          echo "balance before:    $BALANCE_BEFORE SOL"
+          echo "balance after:     $BALANCE_AFTER SOL"
+          awk "BEGIN{printf \"deploy cost:       %.6f SOL\n\", $BALANCE_BEFORE - $BALANCE_AFTER}"

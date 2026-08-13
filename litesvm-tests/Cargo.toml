@@ -1,0 +1,16 @@
+[package]
+name = "streamed-coin-litesvm"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dev-dependencies]
+bincode = "1.3"
+litesvm = "0.6"
+solana-sdk = "2.2"
+anchor-lang = "0.31.1"
+sha2 = "0.10"
+streamed-coin = { path = "../programs/streamed_coin", features = ["no-entrypoint"] }

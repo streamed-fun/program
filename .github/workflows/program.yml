@@ -1,0 +1,63 @@
+# The program's own tests, both halves.
+#
+# `math` runs on any machine with Rust and needs no Solana toolchain: the
+# differential replay against the JavaScript reference, plus the property and
+# event-contract tests. `onchain` needs the SBF toolchain because LiteSVM runs
+# the real compiled artifact.
+#
+# The vectors check is the load-bearing one. tests/vectors.json is generated
+# from js/curve.js, and regenerating it here means the reference cannot drift
+# ahead of the Rust port without a red build.
+
+name: Test program
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  js:
+    name: the JavaScript mirror
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm test
+
+  math:
+    name: differential and property tests (host)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: Swatinem/rust-cache@v2
+      - name: Verify vectors are current
+        run: |
+          node scripts/gen-curve-vectors.mjs
+          git diff --exit-code programs/streamed_coin/tests/vectors.json
+      - run: cargo test -p streamed-coin
+
+  onchain:
+    name: build SBF and run LiteSVM tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: sbf
+      - name: Install Solana toolchain
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v2.2.20/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+      - name: Build the program
+        run: cargo build-sbf
+        working-directory: programs/streamed_coin
+      - run: cargo test -p streamed-coin-litesvm

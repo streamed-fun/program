@@ -1,0 +1,16 @@
+[toolchain]
+anchor_version = "0.31.1"
+
+# Required by the anchor CLI's config parser, and used by nothing here: deploys
+# go through scripts/deploy-program.mjs so the artifact can be the reproducible
+# one, and `anchor idl build` reads no wallet. Present so `anchor` runs at all.
+[provider]
+cluster = "devnet"
+wallet = "~/.config/solana/id.json"
+
+[programs.localnet]
+streamed_coin = "3TdK7cTcmTQwZuZfJyDQqHLe6kyqRXQif2eCF1jDG7k5"
+
+[features]
+resolution = true
+skip-lint = false

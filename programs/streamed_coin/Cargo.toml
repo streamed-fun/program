@@ -1,0 +1,43 @@
+[package]
+name = "streamed-coin"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "streamed_coin"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+# Declared because #[program] and #[derive(Accounts)] expand to code that tests
+# them. Undeclared they are not "unused" -- they are cfgs that can never be
+# true, so the compiler warns on every macro site, and enabling one from the
+# command line would silently do nothing. Off by default, so declaring them
+# changes no behaviour: custom-heap and custom-panic suppress Anchor's default
+# allocator and panic handler, anchor-debug adds account-resolution logging.
+custom-heap = []
+custom-panic = []
+anchor-debug = []
+
+# `target_os = "solana"` is real -- it is what cargo build-sbf compiles for, and
+# Anchor's entrypoint branches on it -- but the host toolchain has never heard
+# of it, so a host `cargo build` or `cargo test` warns on every expansion.
+# Teaching check-cfg about it silences the host build without weakening the lint
+# anywhere else.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
+
+[dependencies]
+anchor-lang = { version = "0.31.1", features = ["event-cpi", "init-if-needed"] }
+anchor-spl = "0.31.1"
+solana-security-txt = "1.1.1"
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
