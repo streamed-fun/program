@@ -21,7 +21,7 @@
 // program matches this repository.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, statSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, statSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PROGRAM_ID } from '../js/program.js';
@@ -204,14 +204,22 @@ if (!existsSync(ARTIFACT)) {
 // practice — a merged PR changed the program, the stale .so still matched the
 // deployment, and verify said ✅.
 const artifactAt = statSync(ARTIFACT).mtimeMs;
-const newestSource = execFileSync(
-  'sh',
-  ['-c', "find programs -type f \\( -name '*.rs' -o -name 'Cargo.toml' \\) -exec stat -f %m {} +"],
-  { encoding: 'utf8' }
-)
-  .trim()
-  .split(/\s+/)
-  .reduce((a, b) => Math.max(a, Number(b) * 1000), 0);
+// Walked in Node rather than shelled out: `stat -f %m` is macOS and means
+// "filesystem info" on Linux, so the shell version passed locally and failed in
+// CI with an error about block sizes.
+const newestSource = (function newest(dir) {
+  let max = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === 'target') continue;
+      max = Math.max(max, newest(full));
+    } else if (entry.name.endsWith('.rs') || entry.name === 'Cargo.toml') {
+      max = Math.max(max, statSync(full).mtimeMs);
+    }
+  }
+  return max;
+})('programs');
 if (newestSource > artifactAt) {
   die(
     `${ARTIFACT} is older than the program source.\n` +
