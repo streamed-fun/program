@@ -39,13 +39,15 @@ This repository is the program and its JavaScript mirror. The application that
 consumes it is separate and private; findings there are still wanted, and the
 same two contacts reach us.
 
+The deployed program has five instructions: `initialize_global`, `update_global`,
+`create_coin`, `buy` and `sell`. The claim flow, graduation and token metadata are
+specified but not built, so there is no code behind them to review. SPEC.md marks
+each unimplemented section.
+
 In scope here, hardest-looking-at first:
 
 - **`programs/streamed_coin`** — the curve program. Anything that pays out more
   than was paid in, mints supply, moves a vault, or bricks a coin's trading.
-- **The claim flow** ([SPEC.md §3.4](SPEC.md)). The oracle set is the largest
-  realistic loss path in the system and is deliberately bounded four ways; holes
-  in those bounds are the highest-value finding here.
 - **The first buy** ([SPEC.md §3.6](SPEC.md)) — one transaction creates a coin
   and buys it, and the backend co-signs. Anything that gets `creator_authority`
   to sign a transaction it did not build, or gets a coin created for a streamer
@@ -59,6 +61,8 @@ In scope here, hardest-looking-at first:
 Out of scope:
 
 - **Devnet SOL.** It is free.
+- **The claim flow, graduation and metadata.** Specified, not implemented. Design
+  feedback is welcome; there is no deployed code to attack.
 - **The application's simulated market data.** Every price the site shows today
   is invented; making it show a wrong number is not a vulnerability.
 - Anything requiring the multisig's own keys, or a streamer's Kick credentials.

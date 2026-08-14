@@ -85,7 +85,6 @@ console.log(`program:  ${PROGRAM_ID}`);
 if (doBuild) {
   console.log('\nbuilding reproducibly (this is slow the first time — it pulls an image)...');
   execFileSync('solana-verify', ['build', '--library-name', LIBRARY_NAME], {
-    cwd: 'program',
     stdio: 'inherit'
   });
 }

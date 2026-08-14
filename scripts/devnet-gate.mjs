@@ -153,8 +153,7 @@ await sendTx(
     symbol: 'GATE',
     // ⛔ NEVER THE REAL DOMAIN. The program only length-checks name/symbol/uri
     // and discards them today, but they still sit in the instruction data of a
-    // public transaction forever. A devnet rehearsal put streamed.fun on chain
-    // while the site was still a gated private beta. .invalid is a reserved TLD
+    // public transaction forever. .invalid is a reserved TLD
     // that can never resolve, so it leaks nothing and cannot be mistaken for a
     // live endpoint.
     uri: 'https://example.invalid/gate.json',
@@ -179,21 +178,19 @@ const ref = curve.createCurve({
   feeBps: BigInt(global.feeBps)
 });
 
-// ⚠️ SIZED TO WHAT THE DEPLOY PAYER ACTUALLY HOLDS, NOT TO WHAT LOOKS REALISTIC.
-// The idle 5 SOL lives in the relayer, whose key is a Worker secret, while this
-// runs in GitHub Actions holding only the deployer key — no runner can move
-// funds between the two, so the gate has to fit inside the payer.
+// Sized to what the deploy payer actually holds, not to what looks realistic.
+// Other devnet balances belong to keys this job does not have, and nothing here
+// can move funds between them, so the gate has to fit inside the payer.
 //
 // ⭐ THIS COSTS THE RUN NOTHING. Every assertion below is exact equality against
 // the reference curve, and the fee take is checked as a lamport delta against
 // paidIn - paidOut - reserve. Both hold at any trade size. Only the absolute
 // numbers look smaller; the arithmetic they prove is identical.
-// ⛔ DERIVED, NOT RANDOM, AND THAT IS A FUNDING FIX RATHER THAN A STYLE CHOICE.
-// These were `keypairFromSeed(randomBytes(32))`, and the sweep that returns
-// their balance to the payer only runs at the very end. Any failure before it
-// stranded the funding in two wallets whose keys existed for one process and
-// then ceased to exist. One aborted run cost 0.65 SOL permanently, which on a
-// devnet with no reachable faucet is most of a day's budget.
+// Derived, not random, and that is a funding fix rather than a style choice.
+// With random keys, the sweep that returns their balance to the payer only runs
+// at the very end, so any failure before it strands the funding in two wallets
+// whose keys existed for one process and then ceased to exist. Devnet SOL is
+// not always replaceable on demand.
 //
 // Seeded off the payer's own key, so a re-run lands on the same two addresses
 // and whatever they still hold is spendable again.

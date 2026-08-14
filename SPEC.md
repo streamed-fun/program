@@ -40,7 +40,7 @@ with the application's spec, so the gaps are deliberate rather than missing.
 | D17 | Any future consumer of a coin's price resolves it from the `Curve` account alone — including after graduation, where the account records the venue it moved to. |
 | D18 | Real funds do not touch mainnet without a third-party audit. Devnet and the LiteSVM suite precede it. |
 | D19 | **Vanity mint addresses.** Every coin's address ends in `kick`. The mint is a supplied keypair rather than a PDA, because a PDA is derived deterministically and cannot be ground for a suffix. **The grinding happens in the buyer's browser and no mint secret key is ever held server-side** — the key signs once and `create_coin` sets its authority to `None` in the same transaction, so it is spent on use. |
-| D20 | ✅ **Revised: every coin opens at the same price and graduates at the same bars.** The five-tier follower band is deleted: it priced concentration up 4x without preventing it, made the backend an unverifiable oracle for follower counts, and its edges were never calibrated to anything (measured against the live index, 83% of channels sat in the floor tier and the top tier held a handful). `create_coin` takes no price argument of any kind, so it cannot open a coin anywhere else. Graduation is a flat pair of collected-SOL bars in `Global`, baked into each `Curve` at creation, so retuning touches future coins only and no live coin's finish line ever moves. SOL-denominated on purpose, pump.fun style: a dollar-anchored bar breaks whenever SOL moves, so dollars are a display concern (D16). |
+| D20 | **Every coin opens at the same price and graduates at the same bars.** There is no follower-based pricing band: it would have priced concentration up without preventing it, and it would have made the backend an unverifiable oracle for follower counts. `create_coin` takes no price argument of any kind, so it cannot open a coin anywhere else. Graduation is a flat pair of collected-SOL bars in `Global`, baked into each `Curve` at creation, so retuning touches future coins only and no live coin's finish line ever moves. SOL-denominated on purpose, pump.fun style: a dollar-anchored bar breaks whenever SOL moves, so dollars are a display concern (D16). |
 | D21 | Coin metadata is immutable (`is_mutable: false`) and its URI is an IPFS CID served through an HTTPS gateway. Nothing about a coin's identity is editable after creation, including by us. |
 
 ## Verification
@@ -189,10 +189,14 @@ non-decreasing across trades (ceil rounding on the token side never lets it fall
 | `create_coin(kick_user_id, name, symbol, uri)` | `creator_authority` + the buyer as `payer` | **Blocklist gate (off-chain, mandatory): the backend checks the blocklist before submitting, with no exceptions — not for Index additions, not for fan-triggered first buys, not for streamer claims. After a mint exists there is no remedy but delisting from our own site; D5 and D9 mean the token, its name and its image are permanent and keep trading on a venue we built. Pre-mint is the only point where "no" is possible.** Enforces `name <= 32 bytes` and `symbol <= 10 bytes` (Metaplex limits, counted in **bytes not characters** — a short Kick display name with emoji can exceed both and would fail the CPI mid-create); sanitize off-chain and reject in-program. Creates the mint (6 decimals), mints `token_total_supply`, splits into `creator_vault` (15%) and `token_vault` (85%), creates Metaplex metadata via CPI, sets mint authority to `None`, never sets freeze authority (D5), initializes `Curve` with `real_sol_reserves = 0` and `token_reserves = 85% of supply`. **Metadata is immutable (`is_mutable: false`) and its `uri` is an IPFS CID served through a gateway (D21)** — nothing about a coin's identity is editable after this returns, including by us. **There is no price argument of any kind (D20 revised):** every coin opens at `Global.default_virtual_sol_reserves` and bakes `Global`'s graduation bars into its `Curve`, so this instruction cannot be used to open a coin anywhere else, and the baked bars are echoed in `CoinCreatedEvent`. **Called only ever bundled with a `buy` in the same transaction (§3.6); no coin is created without a first buyer paying for it.** |
 | `buy(sol_in, min_tokens_out)` | trader (permissionless) | See §3.3. Creates the trader's ATA if needed, payer = trader. |
 | `sell(tokens_in, min_sol_out)` | trader (permissionless) | See §3.3. |
-| `initiate_claim(kick_user_id, destination, expiry)` | destination wallet (+ any fee payer) | Starts the claim. Full detail in §3.4. |
-| `finalize_claim(kick_user_id)` | anyone (permissionless; `relayer` pays) | Completes it after the timelock. §3.4. |
-| `veto_claim(kick_user_id)` | `authority` (multisig) | Cancels a pending claim during the timelock. §3.4. |
-| `migrate(kick_user_id)` | anyone (permissionless) | Graduates the coin to its destination venue once the threshold is met. §3.5. |
+| `initiate_claim(kick_user_id, destination, expiry)` | destination wallet (+ any fee payer) | **Not implemented.** Starts the claim. Full detail in §3.4. |
+| `finalize_claim(kick_user_id)` | anyone (permissionless; `relayer` pays) | **Not implemented.** Completes it after the timelock. §3.4. |
+| `veto_claim(kick_user_id)` | `authority` (multisig) | **Not implemented.** Cancels a pending claim during the timelock. §3.4. |
+| `migrate(kick_user_id)` | anyone (permissionless) | **Not implemented.** Graduates the coin to its destination venue once the threshold is met. §3.5. |
+
+The deployed program has five instructions: `initialize_global`, `update_global`, `create_coin`,
+`buy` and `sell`. The four marked above are specified here so the account layouts carry their shape
+now, and are added in a later phase. `idl.json` is the authority on what exists today.
 
 No `pause` instruction, no per-wallet cap parameter anywhere (D9). No `admin_withdraw` from a curve's
 vaults — treasury only ever receives the fee share, streamed out during `buy`/`sell`, never a lump
@@ -323,6 +327,8 @@ transaction into a detected, alarmed gap instead of silent drift.
 
 ### 3.4 The claim flow
 
+**Not implemented.** Specified here so the account layouts carry its shape; no instruction below exists in the deployed program.
+
 ⚠️ **Everything below assumes the coin already exists on chain, and under the revised D7 most will
 not when the streamer arrives.** A claim on an unminted coin is free and off-chain by decision, and
 it does not trigger creation. That path has no mechanism yet: see the open items below and the
@@ -431,6 +437,8 @@ existed, 48 hours is a reasonable price for making theft cancellable. If that la
 testing, the value is a `Global` field and can be lowered by the multisig without a program upgrade.
 
 ### 3.5 Graduation
+
+**Not implemented.** Specified here so the account layouts carry its shape; `migrate` does not exist in the deployed program and no coin can reach a graduated state.
 
 `migrate(kick_user_id)` — permissionless, callable by anyone once the threshold is met. It carries
 no authority and no discretion, so there is nothing to gain by front-running it and nothing for us
