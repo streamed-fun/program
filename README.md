@@ -74,7 +74,7 @@ npm run program:verify                    # confirm the chain has what this sour
 npm run program:gate                      # drive create/buy/sell against the deployed program
 ```
 
-⚠️ **`--verifiable` decides something permanent.** A deployment is checkable or
+**`--verifiable` decides something permanent.** A deployment is checkable or
 it is not, and that is settled by which artifact was uploaded — not by anything
 you can do afterwards. `cargo build-sbf` produces bytes that depend on the
 machine, so deploying without `--verifiable` means `program:verify` will report
@@ -87,7 +87,7 @@ PDA fixtures together — the id lives in several places and every PDA derives f
 it, so changing it by hand is nine edits and the fixtures are the ones you
 forget.
 
-⚠️ **A deploy upgrades code and never migrates account data.** Any change to the
+**A deploy upgrades code and never migrates account data.** Any change to the
 `Global` or `Curve` struct breaks an existing deployment: the new code
 deserializes the old bytes, runs short, and every instruction fails. There is no
 `realloc` and no `close` path for either account, so it cannot be repaired in
@@ -116,7 +116,7 @@ useful, and what the weekly workflow runs. It registers nothing anywhere.
 commit it came from, signed by the upgrade authority because nobody else may
 make that claim, and then asks a hosted worker to check it.
 
-⚠️ **The hosted verification service only builds mainnet programs**, so no
+**The hosted verification service only builds mainnet programs**, so no
 explorer will show a devnet program as verified however reproducible it is. On
 devnet `--repo` writes the PDA and stops, which is not nothing: the claim is on
 chain, the build is reproducible, and anyone can check it themselves — a fresh
@@ -146,7 +146,7 @@ the program id and the seed `idl`, which is where explorers look. Writing it
 needs the upgrade authority — only whoever controls a program may say what its
 interface is.
 
-⚠️ **The IDL describes the interface, not the deployment.** Publishing one says
+**The IDL describes the interface, not the deployment.** Publishing one says
 nothing about whether the deployed bytes match this source; that is what
 `program:verify` does, and the two are independent. A program can have a
 perfectly accurate IDL and be running something else entirely.

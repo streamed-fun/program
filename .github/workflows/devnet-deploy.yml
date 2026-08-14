@@ -33,11 +33,11 @@ jobs:
         run: |
           sh -c "$(curl -sSfL https://release.anza.xyz/v2.2.20/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
-      # ⛔ THE KEYPAIRS NEVER TOUCH THE FILESYSTEM, and never enter a step that
+      # The keypairs never touch the filesystem, and never enter a step that
       # does not need them.
       #
       # The obvious shape — write both secrets to /tmp, then run the rest of the
-      # job — is what this used to do, and it is worse in two independent ways.
+      # job — is worse in two independent ways.
       # A file outlives the command that needed it, so it is still sitting there
       # while `cargo build-sbf` runs every build script in the dependency tree;
       # any one of them can read it. And on a self-hosted runner the filesystem

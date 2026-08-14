@@ -22,7 +22,7 @@ fn pda_fixtures_match_the_js_side() {
     let (sol_vault, _) = Pubkey::find_program_address(&[b"sol_vault", &kid], &program);
     let (event_authority, _) = Pubkey::find_program_address(&[b"__event_authority"], &program);
     // Every one of these moved when the program id was regenerated on
-    // 12 Aug 2026 — PDAs are derived from it, so a new id is a new address
+    // PDAs are derived from it, so a new id is a new address
     // space. The bump moved with them (255 to 254), which is the sort of thing
     // that is only obvious when it is asserted.
     assert_eq!(global.to_string(), "F8ASxDoxa3bhuxVo2mYFeiofMgKF1gmVHgqGHPNYHKBY");

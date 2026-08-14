@@ -4,7 +4,7 @@
 // uses, so the program scripts do not demand the same values be re-typed on
 // every command line.
 //
-// ⛔ KEYPAIRS ARE REFERENCED BY PATH, NEVER BY VALUE, AND THAT IS DELIBERATE.
+// KEYPAIRS ARE REFERENCED BY PATH, NEVER BY VALUE, AND THAT IS DELIBERATE.
 //
 // The obvious convenience — accept the JSON byte array itself, so a value can
 // be pasted wherever it is wanted — puts a signing key in at least three places

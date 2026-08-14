@@ -13,7 +13,7 @@
 // That key becomes Global.authority, which on
 // mainnet is meant to be the Squads multisig (D10) — hence the refusal below.
 //
-// ⚠️ Global's layout is NOT migrated by a program upgrade. If you change the
+// Global's layout is not migrated by a program upgrade. If you change the
 // struct, an existing Global deserializes short and every instruction fails.
 // There is no close or realloc path, so on devnet the fix is a fresh program
 // id; see program/README.md.
@@ -96,7 +96,7 @@ if (existing?.value && !update) {
   process.exit(0);
 }
 
-// ⚠️ The one opening reserve every coin shares. 30 SOL is pump.fun's number,
+// The one opening reserve every coin shares. 30 SOL is pump.fun's number,
 // carried here so devnet has something to run; the mainnet value gets picked
 // at the gate. SOL-denominated on purpose: no dollar figure anywhere.
 const virtualSol = 30n * SOL;

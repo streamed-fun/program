@@ -9,7 +9,7 @@
 // Reads DEVNET_PROGRAM_KEYPAIR and DEVNET_DEPLOYER_KEYPAIR from `.dev.vars`, as
 // PATHS to the keypair files. Never as values — see the note in devvars.mjs.
 //
-// ⚠️ A deploy upgrades code, never account data. If Global's or Curve's layout
+// A deploy upgrades code, never account data. If Global's or Curve's layout
 // changed since the last deploy, existing accounts deserialize short and every
 // instruction fails — there is no realloc or close path. On devnet the fix is a
 // fresh program id; see program/README.md.
@@ -27,9 +27,8 @@ const flag = (name, fallback) => {
   return at >= 0 ? args[at + 1] : fallback;
 };
 const url = flag('url', 'https://api.devnet.solana.com');
-// Everything except the one command that costs money. Exists because the
-// success path of this script is otherwise only reachable by spending ~3 SOL,
-// which is how it shipped with a crash in it.
+// Everything except the one command that costs money. The success path of this
+// script is otherwise only reachable by spending SOL, so it goes untested.
 const dryRun = args.includes('--dry-run');
 // Build the artifact reproducibly (Docker) rather than with whatever this
 // machine's toolchain produces. It matters more than it sounds: a deployment is

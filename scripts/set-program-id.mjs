@@ -4,8 +4,7 @@
 //   npm run program:id -- --check # verify without writing (what CI wants)
 //
 // The id lives in five places and every PDA in the system derives from it, so
-// swapping by hand is nine edits and the fixtures are the ones you forget. It
-// has been done by hand twice; this is that, reliably.
+// swapping by hand is nine edits and the fixtures are the ones you forget.
 //
 // Why the id has to be baked in at all, rather than discovered at deploy time:
 // Anchor compiles `declare_id!` into the binary and its generated entrypoint
@@ -50,8 +49,7 @@ const FIXTURES = 'litesvm-tests/tests/fixtures.rs';
 
 // Each file is asked what id IT holds, rather than trusting one file to speak
 // for all of them. A run that dies partway leaves the set disagreeing, and a
-// check keyed on any single file then skips the ones still holding the old id —
-// which is exactly what happened, twice, and left Anchor.toml stale.
+// check keyed on any single file then skips the ones still holding the old id.
 const ANCHORS = [
   ['programs/streamed_coin/src/lib.rs', /declare_id!\("([^"]+)"\)/],
   ['Anchor.toml', /streamed_coin = "([^"]+)"/],

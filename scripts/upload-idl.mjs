@@ -17,7 +17,7 @@
 // authority — the point being that only whoever controls the program may say
 // what its interface is.
 //
-// ⚠️ The IDL describes the interface, not the deployment. Uploading one says
+// The IDL describes the interface, not the deployment. Uploading one says
 // nothing about whether the deployed bytes match this source; that is what
 // `program:verify` is for, and the two are independent.
 

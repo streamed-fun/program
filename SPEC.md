@@ -24,18 +24,18 @@ with the application's spec, so the gaps are deliberate rather than missing.
 | # | Decision |
 |---|---|
 | D1 | One Anchor program. A `Global` config PDA plus one `Curve` PDA per streamer, keyed by **Kick user ID, never by username** — usernames change, and a coin that could be inherited by whoever claims an abandoned name is not a coin for that person. |
-| D2 | Plain SPL Token plus Metaplex Token Metadata, not Token-2022. Chosen for wallet and explorer compatibility. ⚠️ Being re-priced: a metadata extension inside the mint is measurably cheaper per coin. |
+| D2 | Plain SPL Token plus Metaplex Token Metadata, not Token-2022. Chosen for wallet and explorer compatibility. Being re-priced: a metadata extension inside the mint is measurably cheaper per coin. |
 | D4 | Fixed supply per coin, 6 decimals. A fixed share is reserved for the streamer in a claim vault; the rest is the curve's sellable float. Both the supply and the share are `Global` parameters. |
 | D5 | Mint authority is set to `None` and freeze authority is never set, in the same transaction that creates the coin. Permanent and irreversible: no future minting, no freezing, ever, by anyone. |
 | D6 | Trades take a fee in basis points, read from `Global`, and the whole fee is the treasury's: no split, no reserve top-up. The in-program ceiling equals the promised rate (1%), so the cap is the promise. |
 | D7 | **Coin creation is gated, not permissionless.** Only the `creator_authority` key may call `create_coin`, which is what makes an off-chain refusal possible at all — after a mint exists, D5 and D9 mean the token and its name are permanent. |
-| D8 | ✅ **Reversed, then restored.** Coins open at identical constants after all: the follower band that briefly replaced the flat open is gone (D20), and every coin shares one opening reserve and one token float. |
+| D8 | Coins open at identical constants: every coin shares one opening reserve and one token float. There is no follower-based band (D20). |
 | D9 | No per-wallet buy cap, no anti-snipe mechanism, no pause instruction. **Stated precisely, because the stronger claim is false:** within the deployed program's rules nobody — including the authority — can halt a coin's trading, drain its reserves, mint more supply, or freeze a holder. Two things remain true and must not be claimed away: trades read fee parameters from `Global` live, so the authority can move them, which is why §3.2 bounds them in-program to values that cannot halt or confiscate; and the program is upgradeable by the authority, so the rules themselves can be replaced. |
 | D10 | `Global`'s authority, the treasury and the program's upgrade authority are all held by a multisig, not a single key. |
 | D11 | Streamer identity is bound by a trusted off-chain oracle: a real Kick OAuth login is verified off chain, then an ed25519 attestation over `(kick_user_id, destination_wallet, expiry)` is signed. The claim instruction verifies that signature on chain via the native Ed25519 program before releasing the vault. |
 | D12 | The claim transaction is fee-sponsored by a relayer key, so a streamer holding no SOL can still claim. The destination wallet still signs, proving live key possession. |
 | D13 | Oracle keys and the relayer key are separate. Oracle compromise can misdirect a claim; relayer compromise can only waste SOL on fees. **The oracle set is the largest realistic loss path in the system**, and §3.4 bounds it four ways: 2-of-3 signing keys held separately, a timelock the multisig can veto inside, an on-chain per-period cap on initiations, and a public event for every attempt. |
-| D15 | Chain data is indexed by a self-built service. ⚠️ Holder enumeration is a special case: these are ordinary SPL tokens, so wallet-to-wallet transfers never touch this program, and a holder list built from program events alone drifts permanently wrong. |
+| D15 | Chain data is indexed by a self-built service. Holder enumeration is a special case: these are ordinary SPL tokens, so wallet-to-wallet transfers never touch this program, and a holder list built from program events alone drifts permanently wrong. |
 | D16 | SOL/USD is never touched on chain. Prices are quoted in SOL and lamports throughout; any fiat conversion is a display concern for the application. |
 | D17 | Any future consumer of a coin's price resolves it from the `Curve` account alone — including after graduation, where the account records the venue it moved to. |
 | D18 | Real funds do not touch mainnet without a third-party audit. Devnet and the LiteSVM suite precede it. |
@@ -208,13 +208,13 @@ including us, at every point in the claim state machine.
 
 ### 3.3 Bonding curve math
 
-**The sell side carries a solvency floor, decided 11 Aug 2026 (working rule, revisit at the
+**The sell side carries a solvency floor** (working rule, revisit at the
 mainnet gate).** Unfloored constant-product sells are insolvent against vault dumps: freely-minted
 vault tokens sold into a shallow pool get quoted against virtual plus real reserves, and the
 virtual part is not money (worked example and analysis in
 the project's economics notes). The floor is not synthetic
 pricing; it is ordinary constant product plus the physical constraint that only SOL that exists
-can leave. The design principle, refined 11 Aug 2026: **byte-for-byte pump.fun behavior for
+can leave. The design principle: **byte-for-byte pump.fun behavior for
 everyone, with the special handling attached only to the one thing pump.fun does not have, the
 freely minted vault.** Curve-origin tokens (anything up to the tracked `outstanding` count) sell
 at pure constant product with no caps, exactly as on pump.fun, where conservation already
@@ -263,7 +263,7 @@ MAX_TAKE_BPS   = 9_800                         // applies ONLY to vault-origin t
 // minted bag): that portion is priced only as far as the pool can pay, additionally capped at
 // MAX_TAKE_BPS of the payable pool so a dump always leaves the buyers a sliver.
 //
-// NO CHANGE IS EVER RETURNED (decided 11 Aug 2026): every token sent is absorbed. Vault-origin
+// No change is ever returned: every token sent is absorbed. Vault-origin
 // tokens beyond what the pool could pay for are RETIRED — held by the curve as untracked
 // surplus, never counted in T, never sold, permanently out of circulation. The seller was paid
 // the maximum the till allowed and walks away holding nothing, so no dust position exists to
@@ -329,13 +329,13 @@ transaction into a detected, alarmed gap instead of silent drift.
 
 **Not implemented.** Specified here so the account layouts carry its shape; no instruction below exists in the deployed program.
 
-⚠️ **Everything below assumes the coin already exists on chain, and under the revised D7 most will
+**Everything below assumes the coin already exists on chain, and under D7 most will
 not when the streamer arrives.** A claim on an unminted coin is free and off-chain by decision, and
 it does not trigger creation. That path has no mechanism yet: see the open items below and the
 write-up in
 the project's economics notes.
 
-Three instructions, replacing the single `claim` in earlier drafts. The split exists because the
+Three instructions. The split exists because the
 oracle keys are the largest realistic loss path in this system: whoever holds them can attest any
 `(kick_user_id, destination)` pair. The program cannot prevent that — it can only make it slow,
 bounded, and visible.
@@ -544,7 +544,7 @@ exists there is nothing left to veto, and refusing trades would only strand the 
 - `initiate_claim`'s ed25519 verification checks the exact program ID, public keys, and message
   bytes of the companion `Ed25519Program` instruction via sysvar introspection — not just "an
   ed25519 ix exists somewhere in this transaction."
-- ⚠️ **The offset trap, which is the actual finding class here.** The Ed25519 program's instruction
+- **The offset trap, which is the actual finding class here.** The Ed25519 program's instruction
   data is a table of offsets, and each signature's `public_key_offset`, `message_data_offset` and
   `signature_offset` carry their own **instruction index** — they may point into a *different*
   instruction's data. A checker that parses "the ed25519 instruction verified our message" without
@@ -569,7 +569,7 @@ exists there is nothing left to veto, and refusing trades would only strand the 
   integration tests for full instruction flows including the ed25519 claim path, the donation-grief
   case, forged ed25519 offsets, and oracle rotation cancelling an in-flight claim.
 - Third-party audit (D18) required before any mainnet deploy — see rollout plan.
-- ⚠️ **Gap: the oracle key has no blast-radius limit.** Every bullet above hardens the *program*.
+- **Gap: the oracle key has no blast-radius limit.** Every bullet above hardens the *program*.
   The largest realistic loss path is not a program bug — it is compromise of the off-chain oracle
   key, which can attest any `(kick_user_id, wallet)` pair and drain every unclaimed `creator_vault`.
   An audit does not address this, and pump.fun's May 2024 loss (~12,300 SOL) was this shape of

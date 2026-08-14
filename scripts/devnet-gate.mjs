@@ -151,7 +151,7 @@ await sendTx(
     kickUserId,
     name: 'Gate Rehearsal',
     symbol: 'GATE',
-    // ⛔ NEVER THE REAL DOMAIN. The program only length-checks name/symbol/uri
+    // Never the real domain. The program only length-checks name/symbol/uri
     // and discards them today, but they still sit in the instruction data of a
     // public transaction forever. .invalid is a reserved TLD
     // that can never resolve, so it leaks nothing and cannot be mistaken for a
@@ -182,7 +182,7 @@ const ref = curve.createCurve({
 // Other devnet balances belong to keys this job does not have, and nothing here
 // can move funds between them, so the gate has to fit inside the payer.
 //
-// ⭐ THIS COSTS THE RUN NOTHING. Every assertion below is exact equality against
+// This costs the run nothing. Every assertion below is exact equality against
 // the reference curve, and the fee take is checked as a lamport delta against
 // paidIn - paidOut - reserve. Both hold at any trade size. Only the absolute
 // numbers look smaller; the arithmetic they prove is identical.
@@ -231,8 +231,8 @@ async function trade(kind, trader, amount, label) {
 }
 
 console.log('\nscripted trades, each min-out pinned to the exact reference quote:');
-// Named so the event assertion below cannot drift from it. It was a literal
-// 1n * SOL in both places, and scaling the trade in one left the other behind.
+// Named so the event assertion below cannot drift from it: a literal in both
+// places lets one be scaled without the other.
 const BUY_1 = 100_000_000n;
 const b1 = await trade('buy', t1, BUY_1, 'buy 1');
 await trade('buy', t1, 40_000_000n, 'buy 2');

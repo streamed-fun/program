@@ -73,7 +73,7 @@ export function fromBase58(s) {
   return new Uint8Array(out);
 }
 
-// The real program id, minted 12 Aug 2026: the devnet deploy workflow holds
+// The real program id: the devnet deploy workflow holds
 // the matching keypair and the program's declare_id! carries the same address,
 // so events decoded here can only come from our deployed code.
 export const PROGRAM_ID = '3TdK7cTcmTQwZuZfJyDQqHLe6kyqRXQif2eCF1jDG7k5';

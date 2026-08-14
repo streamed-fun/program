@@ -25,7 +25,7 @@ declare_id!("3TdK7cTcmTQwZuZfJyDQqHLe6kyqRXQif2eCF1jDG7k5");
 // knowing who we are or that the website exists — which is the entire point,
 // and why every value here is public and permanent.
 // 
-// ⚠️ `no-entrypoint` gates it because the section this emits belongs in a
+// `no-entrypoint` gates it because the section this emits belongs in a
 // deployed program and not in a crate linked as a library — the LiteSVM suite
 // depends on this crate with that feature for exactly that reason.
 // 

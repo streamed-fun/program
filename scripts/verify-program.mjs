@@ -90,7 +90,7 @@ if (doBuild) {
 }
 
 if (fromRepo) {
-  // ⛔ THIS is the step that makes anything visible to an explorer. Everything
+  // This is the step that makes anything visible to an explorer. Everything
   // else in this file is a local check: it proves to YOU that the deployed bytes
   // match your source, and registers nothing anywhere. Solscan and friends read
   // the OtterSec registry, and only --remote submits to it.
@@ -155,7 +155,7 @@ if (fromRepo) {
   execFileSync(
     'solana-verify',
     [
-      // ⚠️ --url and -c are GLOBAL options and are rejected after the subcommand.
+      // --url and -c are global options and are rejected after the subcommand.
       '--url', url,
       '-c', cliConfig,
       'verify-from-repo',
@@ -169,7 +169,7 @@ if (fromRepo) {
     { stdio: 'inherit' }
   );
 
-  // ⛔ The hosted verification service only builds mainnet programs. On any
+  // The hosted verification service only builds mainnet programs. On any
   // other cluster the PDA above is the whole story: the program's own on-chain
   // claim about which repository and commit it came from, which anybody can
   // read and check themselves. What is missing is a third party having checked
@@ -197,11 +197,11 @@ if (!existsSync(ARTIFACT)) {
   die(`no artifact at ${ARTIFACT} — run \`npm run program:verify -- --build\` first`);
 }
 
-// ⛔ An artifact older than the source it claims to be is the one way this
+// An artifact older than the source it claims to be is the one way this
 // check can lie, and it lies in the worst direction: it reports a match against
 // the chain while comparing a build from before the source changed. Caught in
 // practice — a merged PR changed the program, the stale .so still matched the
-// deployment, and verify said ✅.
+// deployment, and verify said .
 const artifactAt = statSync(ARTIFACT).mtimeMs;
 // Walked in Node rather than shelled out: `stat -f %m` is macOS and means
 // "filesystem info" on Linux, so the shell version passed locally and failed in
