@@ -73,6 +73,7 @@ npm run program:init -- --update --grad-bar 1 --grad-bar-claimed 0.85   # retune
 npm run program:idl                       # publish the IDL so explorers can decode transactions
 npm run program:verify                    # confirm the chain has what this source builds
 npm run program:gate                      # drive create/buy/sell against the deployed program
+node scripts/devnet-trades.mjs --wallets w1.json,w2.json   # keep the devnet coins trading; the Devnet drip workflow runs this on a schedule
 ```
 
 A retune reads the Global that is on chain and changes only the flags given;

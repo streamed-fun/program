@@ -1,0 +1,82 @@
+# Keeps devnet trading. Every ten minutes a few small trades land across every
+# coin the program holds on devnet, from wallets held as repo secrets, so a
+# devnet deployment always has real transactions to index.
+#
+# Secrets, any subset of which may be set:
+#   DEVNET_WALLET_1, DEVNET_WALLET_2, DEVNET_WALLET_3
+#     solana-keygen JSON for a funded devnet wallet. The script picks one at
+#     random per trade. With none set the run exits quietly and does nothing.
+#
+# The wallets are written to the runner's private temp directory with owner-only
+# permissions and removed in a step that runs whether or not the trades landed.
+# Nothing here prints a key, and the script refuses any cluster but devnet.
+
+name: Devnet drip
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      trades:
+        description: 'Trades this run'
+        default: '3'
+      over:
+        description: 'Spread them over (e.g. 6m)'
+        default: '6m'
+      dry_run:
+        description: 'Plan and print, sign nothing'
+        type: boolean
+        default: false
+
+concurrency:
+  group: devnet-drip
+  cancel-in-progress: false
+
+jobs:
+  drip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Stage the wallets
+        id: wallets
+        env:
+          W1: ${{ secrets.DEVNET_WALLET_1 }}
+          W2: ${{ secrets.DEVNET_WALLET_2 }}
+          W3: ${{ secrets.DEVNET_WALLET_3 }}
+        run: |
+          paths=""
+          i=0
+          for w in "$W1" "$W2" "$W3"; do
+            i=$((i + 1))
+            [ -n "$w" ] || continue
+            f="$RUNNER_TEMP/wallet-$i.json"
+            (umask 077; printf '%s' "$w" > "$f")
+            paths="${paths:+$paths,}$f"
+          done
+          if [ -z "$paths" ]; then
+            echo "no DEVNET_WALLET_* secret is set; nothing to trade with"
+          fi
+          echo "paths=$paths" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v6
+        if: ${{ steps.wallets.outputs.paths != '' }}
+      - uses: actions/setup-node@v4
+        if: ${{ steps.wallets.outputs.paths != '' }}
+        with:
+          node-version: 24
+      - name: Trade
+        if: ${{ steps.wallets.outputs.paths != '' }}
+        env:
+          WALLETS: ${{ steps.wallets.outputs.paths }}
+          TRADES: ${{ inputs.trades || '3' }}
+          OVER: ${{ inputs.over || '6m' }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          SEED: ${{ github.run_id }}
+        run: |
+          extra=""
+          if [ "$DRY_RUN" = "true" ]; then extra="--dry-run"; fi
+          node scripts/devnet-trades.mjs --wallets "$WALLETS" --trades "$TRADES" --over "$OVER" \
+            --min-sol 0.01 --max-sol 0.05 --seed "$SEED" $extra
+      - name: Remove the staged wallets
+        if: ${{ always() }}
+        run: rm -f "$RUNNER_TEMP"/wallet-*.json
