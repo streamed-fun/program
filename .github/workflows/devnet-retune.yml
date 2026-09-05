@@ -1,0 +1,63 @@
+# Retunes the program's Global settings on devnet. Manual trigger only.
+#
+# Only the graduation bars are exposed as inputs, because they are the settings
+# a test network wants different from production: a bar a few wallets can reach
+# lets every state of a coin be exercised. Everything else in Global is read from
+# the chain and carried forward unchanged (see scripts/init-global.mjs).
+#
+# Required repo secret:
+#   DEVNET_DEPLOYER_KEYPAIR - the keypair that initialized Global; it is
+#                             Global.authority and the only key update_global
+#                             accepts.
+#
+# The script takes the keypair as a file path, so the secret is written to the
+# runner's private temp directory with owner-only permissions and removed in a
+# step that runs whether or not the retune succeeded.
+
+name: Retune Global on devnet
+
+on:
+  workflow_dispatch:
+    inputs:
+      grad_bar:
+        description: 'Graduation bar in SOL collected (new coins only)'
+        required: true
+        default: '1'
+      grad_bar_claimed:
+        description: 'Graduation bar once the streamer has claimed, in SOL (must not exceed grad_bar)'
+        required: true
+        default: '0.85'
+      dry_run:
+        description: 'Print what would change and send nothing'
+        type: boolean
+        default: false
+
+jobs:
+  retune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Stage the authority key
+        if: ${{ !inputs.dry_run }}
+        env:
+          DEVNET_DEPLOYER_KEYPAIR: ${{ secrets.DEVNET_DEPLOYER_KEYPAIR }}
+        run: |
+          test -n "$DEVNET_DEPLOYER_KEYPAIR" || { echo "DEVNET_DEPLOYER_KEYPAIR secret is not set"; exit 1; }
+          (umask 077; printf '%s' "$DEVNET_DEPLOYER_KEYPAIR" > "$RUNNER_TEMP/deployer.json")
+      - name: Retune
+        env:
+          DEVNET_DEPLOYER_KEYPAIR: ${{ runner.temp }}/deployer.json
+          GRAD_BAR: ${{ inputs.grad_bar }}
+          GRAD_BAR_CLAIMED: ${{ inputs.grad_bar_claimed }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          extra=""
+          if [ "$DRY_RUN" = "true" ]; then extra="--dry-run"; fi
+          node scripts/init-global.mjs --update --grad-bar "$GRAD_BAR" --grad-bar-claimed "$GRAD_BAR_CLAIMED" $extra
+      - name: Remove the staged key
+        if: ${{ always() }}
+        run: rm -f "$RUNNER_TEMP/deployer.json"

@@ -5,13 +5,21 @@
 // deployed program and a usable one — nothing else can run until Global exists,
 // because every instruction reads its economics from it.
 //
-//   npm run program:init                 # devnet, initialize if absent
-//   npm run program:init -- --update     # retune an existing Global
+//   npm run program:init                                   # devnet, initialize if absent
+//   npm run program:init -- --update --grad-bar 1 --grad-bar-claimed 0.85
+//   npm run program:init -- --update --grad-bar 1 --dry-run
 //   npm run program:init -- --url https://api.mainnet-beta.solana.com
+//
+// A retune reads the Global that is there and changes only the flags given.
+// update_global takes the whole parameter set, so anything else would have to
+// be re-supplied from somewhere, and re-supplying the roles from this script's
+// defaults would rotate the creator authority, relayer and treasury to the
+// deployer without anyone asking for it.
 //
 // Reads DEVNET_DEPLOYER_KEYPAIR from `.dev.vars`, as a PATH to the keypair file.
 // That key becomes Global.authority, which on
 // mainnet is meant to be the Squads multisig (D10) — hence the refusal below.
+// A --dry-run needs no key at all: it prints what would be sent and exits.
 //
 // Global's layout is not migrated by a program upgrade. If you change the
 // struct, an existing Global deserializes short and every instruction fails.
@@ -20,6 +28,7 @@
 
 import { keypairFromSeed, buildTransaction } from '../js/tx.js';
 import { initializeGlobalIx, updateGlobalIx, decodeGlobal, pdas, PROGRAM_ID } from '../js/program.js';
+import { retuneParams, changedFields, solToLamports } from '../js/retune.js';
 import { loadDevVars, keypairBytes } from './devvars.mjs';
 
 loadDevVars();
@@ -31,6 +40,7 @@ const flag = (name, fallback) => {
 };
 const url = flag('url', 'https://api.devnet.solana.com');
 const update = args.includes('--update');
+const dryRun = args.includes('--dry-run');
 
 const SOL = 1_000_000_000n;
 const fmtSol = (n) => `${(Number(n) / 1e9).toFixed(4)} SOL`;
@@ -46,13 +56,6 @@ async function rpc(method, params) {
   return body.result;
 }
 
-let deployerBytes;
-try {
-  deployerBytes = keypairBytes('DEVNET_DEPLOYER_KEYPAIR');
-} catch (err) {
-  console.error(err.message);
-  process.exit(1);
-}
 if (url.includes('mainnet')) {
   console.error(
     'refusing to run against mainnet: Global.authority must be the Squads multisig (D10),\n' +
@@ -61,12 +64,21 @@ if (url.includes('mainnet')) {
   process.exit(1);
 }
 
-const payer = keypairFromSeed(deployerBytes);
+let payer;
+if (!dryRun) {
+  try {
+    payer = keypairFromSeed(keypairBytes('DEVNET_DEPLOYER_KEYPAIR'));
+  } catch (err) {
+    console.error(err.message);
+    process.exit(1);
+  }
+}
+
 const p = pdas(0);
 
 console.log(`cluster:  ${url}`);
 console.log(`program:  ${PROGRAM_ID}`);
-console.log(`authority:${payer.publicKey}`);
+console.log(`authority:${payer ? payer.publicKey : '(dry run, no key loaded)'}`);
 console.log(`global:   ${p.global.address}`);
 
 const program = await rpc('getAccountInfo', [PROGRAM_ID, { encoding: 'base64' }]);
@@ -75,63 +87,121 @@ if (!program?.value) {
   process.exit(1);
 }
 
-const existing = await rpc('getAccountInfo', [p.global.address, { encoding: 'base64' }]);
-if (existing?.value && !update) {
-  const bytes = Buffer.from(existing.value.data[0], 'base64');
-  console.log(`\nglobal already exists (${bytes.length} bytes)`);
+const readGlobal = async () => {
+  const account = await rpc('getAccountInfo', [p.global.address, { encoding: 'base64' }]);
+  if (!account?.value) return null;
+  const bytes = Buffer.from(account.value.data[0], 'base64');
   try {
-    const g = decodeGlobal(new Uint8Array(bytes));
-    console.log(`  fee ${g.feeBps}bps, creator share ${g.creatorShareBps}bps`);
-    console.log(`  opening reserve ${fmtSol(g.defaultVirtualSolReserves)}`);
-    console.log(`  graduation ${fmtSol(g.gradBarLamports)} collected, ${fmtSol(g.gradBarClaimedLamports)} claimed`);
+    return decodeGlobal(new Uint8Array(bytes));
   } catch {
     console.error(
-      '  ⚠️ could not decode it with the current layout.\n' +
+      `\nglobal exists (${bytes.length} bytes) but could not be decoded with the current layout.\n` +
         '  That means the deployed struct and this checkout disagree — a program upgrade does\n' +
         '  not migrate account data. On devnet, generate a fresh program id.'
     );
     process.exit(1);
   }
+};
+
+const describe = (g) => {
+  console.log(`  fee ${g.feeBps}bps, creator share ${g.creatorShareBps}bps`);
+  console.log(`  opening reserve ${fmtSol(g.defaultVirtualSolReserves)}`);
+  console.log(`  graduation ${fmtSol(g.gradBarLamports)} collected, ${fmtSol(g.gradBarClaimedLamports)} claimed`);
+};
+
+const existing = await readGlobal();
+
+if (existing && !update) {
+  console.log('\nglobal already exists');
+  describe(existing);
   console.log('\nnothing to do. Pass --update to retune it.');
   process.exit(0);
 }
+if (!existing && update) {
+  console.error('\nnothing to update: no Global at this address yet. Run without --update to initialize it.');
+  process.exit(1);
+}
 
-// The one opening reserve every coin shares. 30 SOL is pump.fun's number,
-// carried here so devnet has something to run; the mainnet value gets picked
-// at the gate. SOL-denominated on purpose: no dollar figure anywhere.
-const virtualSol = 30n * SOL;
+let params;
+if (update) {
+  const overrides = {};
+  if (flag('grad-bar')) overrides.gradBarLamports = solToLamports(flag('grad-bar'));
+  if (flag('grad-bar-claimed')) overrides.gradBarClaimedLamports = solToLamports(flag('grad-bar-claimed'));
+  try {
+    params = retuneParams(existing, overrides);
+  } catch (err) {
+    console.error(`\n${err.message}`);
+    process.exit(1);
+  }
+  const changed = changedFields(retuneParams(existing), params);
+  console.log('\ncurrent');
+  describe(existing);
+  if (!changed.length) {
+    console.log('\nno flags given, so nothing would change. Nothing sent.');
+    process.exit(0);
+  }
+  console.log('\nafter');
+  describe(params);
+  console.log(`\nchanging: ${changed.join(', ')}. Every other value is carried forward as is.`);
+  if (payer && existing.authority !== payer.publicKey) {
+    console.error(`\nthe loaded key ${payer.publicKey} is not Global.authority ${existing.authority}; the program would reject this.`);
+    process.exit(1);
+  }
+} else {
+  // The one opening reserve every coin shares. 30 SOL is pump.fun's number,
+  // carried here so devnet has something to run; the mainnet value gets picked
+  // at the gate. SOL-denominated on purpose: no dollar figure anywhere.
+  const virtualSol = 30n * SOL;
 
-// Every role defaults to the deployer, which is a rehearsal shortcut and not
-// the design: the deployer is also Global.authority AND the program's upgrade
-// authority, so handing it to the Worker as creator_authority would put the key
-// that can replace the program inside a web service. Set these to separate
-// keys — the addresses are public, so they belong in the environment rather
-// than in a keypair file.
-const addr = (name) => process.env[name] || payer.publicKey;
-const oracles = (process.env.ORACLE_ADDRESSES || '')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
+  // Every role defaults to the deployer, which is a rehearsal shortcut and not
+  // the design: the deployer is also Global.authority AND the program's upgrade
+  // authority, so handing it to the Worker as creator_authority would put the key
+  // that can replace the program inside a web service. Set these to separate
+  // keys — the addresses are public, so they belong in the environment rather
+  // than in a keypair file.
+  const self = payer ? payer.publicKey : '(deployer)';
+  const addr = (name) => process.env[name] || self;
+  const oracles = (process.env.ORACLE_ADDRESSES || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 
-const params = {
-  creatorAuthority: addr('CREATOR_ADDRESS'),
-  oraclePubkeys: [0, 1, 2].map((i) => oracles[i] || oracles[0] || payer.publicKey),
-  oracleThreshold: 2,
-  relayerPubkey: addr('RELAYER_ADDRESS'),
-  treasury: addr('TREASURY_ADDRESS'),
-  feeBps: 100,
-  creatorShareBps: 1_500,
-  tokenTotalSupply: 10_000_000n * 1_000_000n,
-  tokenDecimals: 6,
-  defaultVirtualSolReserves: virtualSol,
-  claimDelaySeconds: 172_800n,
-  claimPeriodSeconds: 86_400n,
-  claimCapPerPeriod: 10,
-  // The flat graduation bars (D20 revised), in collected SOL: 160, 136 once
-  // claimed. Baked into each coin at creation; retunes touch new coins only.
-  gradBarLamports: 160n * SOL,
-  gradBarClaimedLamports: 136n * SOL
-};
+  params = {
+    creatorAuthority: addr('CREATOR_ADDRESS'),
+    oraclePubkeys: [0, 1, 2].map((i) => oracles[i] || oracles[0] || self),
+    oracleThreshold: 2,
+    relayerPubkey: addr('RELAYER_ADDRESS'),
+    treasury: addr('TREASURY_ADDRESS'),
+    feeBps: 100,
+    creatorShareBps: 1_500,
+    tokenTotalSupply: 10_000_000n * 1_000_000n,
+    tokenDecimals: 6,
+    defaultVirtualSolReserves: virtualSol,
+    claimDelaySeconds: 172_800n,
+    claimPeriodSeconds: 86_400n,
+    claimCapPerPeriod: 10,
+    // The flat graduation bars (D20 revised), in collected SOL: 160, 136 once
+    // claimed. Baked into each coin at creation; retunes touch new coins only.
+    gradBarLamports: 160n * SOL,
+    gradBarClaimedLamports: 136n * SOL
+  };
+
+  console.log(`\ninitialize_global: floor reserve ${fmtSol(virtualSol)}`);
+  for (const [role, value] of [
+    ['creator_authority', params.creatorAuthority],
+    ['relayer', params.relayerPubkey],
+    ['treasury', params.treasury],
+    ['oracle[0]', params.oraclePubkeys[0]]
+  ]) {
+    const same = value === self ? '  ⚠️ same as the deployer' : '';
+    console.log(`  ${role.padEnd(18)} ${value}${same}`);
+  }
+}
+
+if (dryRun) {
+  console.log('\ndry run: nothing sent.');
+  process.exit(0);
+}
 
 const { blockhash } = (await rpc('getLatestBlockhash', [{ commitment: 'confirmed' }])).value;
 const build = update ? updateGlobalIx : initializeGlobalIx;
@@ -141,19 +211,39 @@ const tx = buildTransaction({
   signers: [payer]
 });
 
-console.log(`\n${update ? 'update_global' : 'initialize_global'}: floor reserve ${fmtSol(virtualSol)}`);
-for (const [role, value] of [
-  ['creator_authority', params.creatorAuthority],
-  ['relayer', params.relayerPubkey],
-  ['treasury', params.treasury],
-  ['oracle[0]', params.oraclePubkeys[0]]
-]) {
-  const same = value === payer.publicKey ? '  ⚠️ same as the deployer' : '';
-  console.log(`  ${role.padEnd(18)} ${value}${same}`);
-}
 const sig = await rpc('sendTransaction', [
   Buffer.from(tx.bytes).toString('base64'),
   { encoding: 'base64', preflightCommitment: 'confirmed' }
 ]);
+console.log(`\n${update ? 'update_global' : 'initialize_global'} sent`);
 console.log(`signature: ${sig}`);
 console.log(`https://explorer.solana.com/tx/${sig}?cluster=devnet`);
+
+// Confirm, then read the account back rather than trusting the send: a
+// transaction the RPC accepted can still fail on chain.
+for (let i = 0; i < 30; i++) {
+  await new Promise((r) => setTimeout(r, 2000));
+  const statuses = await rpc('getSignatureStatuses', [[sig]]);
+  const status = statuses?.value?.[0];
+  if (!status) continue;
+  if (status.err) {
+    console.error(`\ntransaction failed on chain: ${JSON.stringify(status.err)}`);
+    process.exit(1);
+  }
+  if (status.confirmationStatus === 'confirmed' || status.confirmationStatus === 'finalized') break;
+}
+const after = await readGlobal();
+if (!after) {
+  console.error('\nconfirmed, but Global could not be read back');
+  process.exit(1);
+}
+console.log('\nGlobal now reads');
+describe(after);
+if (update) {
+  for (const key of ['gradBarLamports', 'gradBarClaimedLamports']) {
+    if (after[key] !== params[key]) {
+      console.error(`\n${key} on chain is ${after[key]}, expected ${params[key]}`);
+      process.exit(1);
+    }
+  }
+}

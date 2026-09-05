@@ -69,10 +69,19 @@ npm run program:id                        # point the checkout at DEVNET_PROGRAM
 npm run program:deploy -- --dry-run       # preflight and build, spend nothing
 npm run program:deploy -- --verifiable    # build in Docker, then deploy that
 npm run program:init                      # initialize_global; nothing works until it exists
+npm run program:init -- --update --grad-bar 1 --grad-bar-claimed 0.85   # retune; add --dry-run to only look
 npm run program:idl                       # publish the IDL so explorers can decode transactions
 npm run program:verify                    # confirm the chain has what this source builds
 npm run program:gate                      # drive create/buy/sell against the deployed program
 ```
+
+A retune reads the Global that is on chain and changes only the flags given;
+every role and number it does not mention is carried forward as is. The
+graduation bars are the usual reason: a devnet bar a couple of wallets can
+reach makes the graduated state testable, and since each coin bakes the bars
+in at creation, the change touches new coins only. The **Retune Global on
+devnet** workflow runs the same script from CI, which is where the authority
+key lives.
 
 **`--verifiable` decides something permanent.** A deployment is checkable or
 it is not, and that is settled by which artifact was uploaded — not by anything
