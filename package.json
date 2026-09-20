@@ -1,6 +1,6 @@
 {
   "name": "@streamed-fun/program",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "The streamed.fun curve program, and the JavaScript mirror that is tested against it",
   "license": "UNLICENSED",
   "type": "module",
