@@ -1,0 +1,71 @@
+# Cancel a pending claim during its veto window, on devnet. Manual trigger only.
+#
+# This exists because the veto window is a promise the program makes to every
+# streamer: a claim they did not start is public for `claim_delay_seconds` and
+# can be stopped in that time. Keeping the only way to stop one on somebody's
+# laptop makes that promise depend on which laptop is nearby. Here it depends
+# on repository access and the authority secret, which is the whole point of
+# putting it in CI.
+#
+# ⛔ DRY RUN BY DEFAULT. `confirm` has to be ticked deliberately. A veto
+# cancels a specific person's claim on their own money and forces them to start
+# the window again, so the safe path is the one you get by accident.
+#
+# Run it with `confirm` off first and read the summary: it prints the
+# destination wallet and the time remaining, which are the two things to check
+# against whatever made you reach for this.
+#
+# Required repo secret:
+#   DEVNET_DEPLOYER_KEYPAIR - the keypair that is Global.authority on devnet,
+#                             and the only key veto_claim accepts.
+#
+# The secret is written to the runner's private temp directory with owner-only
+# permissions and removed in a step that runs whether or not the veto
+# succeeded. It is only staged at all when actually sending.
+
+name: Veto a claim on devnet
+
+on:
+  workflow_dispatch:
+    inputs:
+      kick_user_id:
+        description: 'The channel whose pending claim should be cancelled. Leave blank with confirm off to just list what is pending.'
+        required: false
+        default: ''
+      confirm:
+        description: 'Send it. Off means print what would happen and stop.'
+        type: boolean
+        default: false
+
+jobs:
+  veto:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Stage the authority key
+        if: ${{ inputs.confirm }}
+        env:
+          DEVNET_DEPLOYER_KEYPAIR: ${{ secrets.DEVNET_DEPLOYER_KEYPAIR }}
+        run: |
+          test -n "$DEVNET_DEPLOYER_KEYPAIR" || { echo "DEVNET_DEPLOYER_KEYPAIR secret is not set"; exit 1; }
+          (umask 077; printf '%s' "$DEVNET_DEPLOYER_KEYPAIR" > "$RUNNER_TEMP/deployer.json")
+      - name: Veto
+        env:
+          DEVNET_DEPLOYER_KEYPAIR: ${{ runner.temp }}/deployer.json
+          KICK_USER_ID: ${{ inputs.kick_user_id }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ -z "$KICK_USER_ID" ]; then
+            node scripts/veto-claim.mjs --list
+            exit 0
+          fi
+          set -- --kick-user-id "$KICK_USER_ID"
+          if [ "$CONFIRM" = "true" ]; then set -- "$@" --confirm; fi
+          node scripts/veto-claim.mjs "$@"
+      - name: Remove the staged key
+        if: ${{ always() }}
+        run: rm -f "$RUNNER_TEMP/deployer.json"

@@ -27,6 +27,7 @@
     "program:id": "node scripts/set-program-id.mjs",
     "program:deploy": "node scripts/deploy-program.mjs",
     "program:init": "node scripts/init-global.mjs",
+    "program:veto": "node scripts/veto-claim.mjs",
     "program:idl": "node scripts/upload-idl.mjs",
     "program:verify": "node scripts/verify-program.mjs",
     "program:gate": "node scripts/devnet-gate.mjs"

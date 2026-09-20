@@ -70,11 +70,22 @@ npm run program:deploy -- --dry-run       # preflight and build, spend nothing
 npm run program:deploy -- --verifiable    # build in Docker, then deploy that
 npm run program:init                      # initialize_global; nothing works until it exists
 npm run program:init -- --update --grad-bar 1 --grad-bar-claimed 0.85   # retune; add --dry-run to only look
+npm run program:init -- --update --oracles A,B,C   # rotate the oracle set; also bumps oracle_epoch
+npm run program:veto -- --list            # claims inside their veto window
+npm run program:veto -- --kick-user-id N  # inspect one; add --confirm to cancel it
 npm run program:idl                       # publish the IDL so explorers can decode transactions
 npm run program:verify                    # confirm the chain has what this source builds
 npm run program:gate                      # drive create/buy/sell against the deployed program
 node scripts/devnet-trades.mjs --wallets w1.json,w2.json   # keep the devnet coins trading; the Devnet drip workflow runs this on a schedule
 ```
+
+`program:veto` cancels a pending claim during its window, which is the operator
+half of the promise §3.4 makes: a claim the streamer did not start is public
+for `claim_delay_seconds` and can be stopped in that time. Sending is opt-in —
+the default prints the destination wallet and the time remaining and stops,
+because a veto cancels a specific person's claim and forces them to start over.
+`--list` answers what is pending without needing anything outside this
+repository.
 
 A retune reads the Global that is on chain and changes only the flags given;
 every role and number it does not mention is carried forward as is. The
