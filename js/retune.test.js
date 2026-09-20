@@ -103,6 +103,27 @@ test('there are exactly three oracle slots', () => {
   assert.throws(() => retuneParams(existing, { oraclePubkeys: ['O1', 'O2'] }), /exactly three/);
 });
 
+// The delay can be lowered to the program's floor, which is what makes an
+// end-to-end devnet test a day rather than two — and no further, because the
+// veto window is a public promise and a delay of zero would rush a claim
+// through before anyone could object. The program refuses it either way; this
+// fails with a sentence instead of with BadGlobalParam.
+test('the claim delay stops at the 24h floor the program enforces', () => {
+  assert.doesNotThrow(() => retuneParams(existing, { claimDelaySeconds: 86_400n }));
+  assert.throws(() => retuneParams(existing, { claimDelaySeconds: 86_399n }), /floor is 86400/);
+  assert.throws(() => retuneParams(existing, { claimDelaySeconds: 0n }), /public promise/);
+  assert.deepEqual(
+    changedFields(existing, retuneParams(existing, { claimDelaySeconds: 86_400n })),
+    ['claimDelaySeconds']
+  );
+});
+
+test('a cap of zero would halt every claim and is refused', () => {
+  assert.throws(() => retuneParams(existing, { claimCapPerPeriod: 0 }), /at least 1/);
+  assert.throws(() => retuneParams(existing, { claimPeriodSeconds: 0n }), /must be positive/);
+  assert.doesNotThrow(() => retuneParams(existing, { claimCapPerPeriod: 1 }));
+});
+
 // The program increments oracle_epoch on any oracle change, and that cancels
 // every pending claim at once. A caller has to be told before sending.
 test('an oracle change is reported as the rotation it is', () => {

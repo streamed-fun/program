@@ -43,6 +43,10 @@ on:
         description: 'Three DISTINCT oracle addresses, comma separated. Leave blank to keep the current set. Rotating them cancels every pending claim.'
         required: false
         default: ''
+      claim_delay_seconds:
+        description: 'Veto window in seconds. Blank keeps the current value. The program floors it at 86400 (24h), which is also the fastest an end-to-end claim test can run.'
+        required: false
+        default: ''
       dry_run:
         description: 'Print what would change and send nothing'
         type: boolean
@@ -70,10 +74,12 @@ jobs:
           GRAD_BAR: ${{ inputs.grad_bar }}
           GRAD_BAR_CLAIMED: ${{ inputs.grad_bar_claimed }}
           ORACLES: ${{ inputs.oracles }}
+          CLAIM_DELAY: ${{ inputs.claim_delay_seconds }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -- --update --grad-bar "$GRAD_BAR" --grad-bar-claimed "$GRAD_BAR_CLAIMED"
           if [ -n "$ORACLES" ]; then set -- "$@" --oracles "$ORACLES"; fi
+          if [ -n "$CLAIM_DELAY" ]; then set -- "$@" --claim-delay "$CLAIM_DELAY"; fi
           if [ "$DRY_RUN" = "true" ]; then set -- "$@" --dry-run; fi
           node scripts/init-global.mjs "$@"
       - name: Remove the staged key

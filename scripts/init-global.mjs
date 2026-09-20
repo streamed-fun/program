@@ -9,6 +9,7 @@
 //   npm run program:init -- --update --grad-bar 1 --grad-bar-claimed 0.85
 //   npm run program:init -- --update --grad-bar 1 --dry-run
 //   npm run program:init -- --update --oracles A,B,C       # rotate the oracle set
+//   npm run program:init -- --update --claim-delay 86400    # the 24h floor, for devnet testing
 //   npm run program:init -- --url https://api.mainnet-beta.solana.com
 //
 // A retune reads the Global that is there and changes only the flags given.
@@ -108,6 +109,10 @@ const describe = (g) => {
   console.log(`  fee ${g.feeBps}bps, creator share ${g.creatorShareBps}bps`);
   console.log(`  opening reserve ${fmtSol(g.defaultVirtualSolReserves)}`);
   console.log(`  graduation ${fmtSol(g.gradBarLamports)} collected, ${fmtSol(g.gradBarClaimedLamports)} claimed`);
+  console.log(
+    `  claim delay ${g.claimDelaySeconds}s (${(Number(g.claimDelaySeconds) / 3600).toFixed(1)}h), ` +
+      `cap ${g.claimCapPerPeriod} per ${g.claimPeriodSeconds}s`
+  );
   const distinct = new Set(g.oraclePubkeys).size;
   console.log(`  oracles ${distinct}-of-${g.oraclePubkeys.length} distinct, threshold ${g.oracleThreshold}`);
   for (const [i, key] of g.oraclePubkeys.entries()) console.log(`    [${i}] ${key}`);
@@ -145,6 +150,11 @@ if (update) {
     overrides.oraclePubkeys = keys;
   }
   if (flag('oracle-threshold')) overrides.oracleThreshold = Number(flag('oracle-threshold'));
+  // The veto window, in seconds. The program floors it at 24h and refuses
+  // anything shorter, so this cannot be used to rush a claim through — what it
+  // is for is devnet, where 48h makes an end-to-end test take two days.
+  if (flag('claim-delay')) overrides.claimDelaySeconds = BigInt(flag('claim-delay'));
+  if (flag('claim-cap')) overrides.claimCapPerPeriod = Number(flag('claim-cap'));
   console.log('\ncurrent');
   describe(existing);
   try {
