@@ -13,6 +13,48 @@ use solana_sdk::{
     transaction::Transaction,
 };
 
+mod common;
+
+/// The claim message and the Ed25519 instruction, pinned against
+/// js/claim.test.js. Same deterministic keys on both sides: destination from
+/// seed 9, oracles from seeds 5 and 6, and Ed25519 signatures are
+/// deterministic, so the bytes match exactly or something drifted.
+#[test]
+fn claim_message_bytes_match_the_js_side() {
+    let destination = keypair_from_seed(&[9u8; 32]).unwrap().pubkey();
+    let message = streamed_coin::claim_message(4242, &destination, 1_700_000_000, 3);
+    let hex: String = message.iter().map(|b| format!("{b:02x}")).collect();
+    assert_eq!(hex, "9210000000000000fd1724385aa0c75b64fb78cd602fa1d991fdebf76b13c58ed702eac835e9f61800f1536500000000030000000000000024898889896884b95dec034b882336013e6bb60c7df01b2a5cad39acc0a5cdf2");
+}
+
+#[test]
+fn a_single_signer_ed25519_instruction_is_the_sdk_layout() {
+    let destination = keypair_from_seed(&[9u8; 32]).unwrap().pubkey();
+    let oracle = keypair_from_seed(&[5u8; 32]).unwrap();
+    let message = streamed_coin::claim_message(4242, &destination, 1_700_000_000, 3);
+    // The SDK's own constructor, which is what every other Solana client
+    // produces for one signature; ours must be byte-identical to it.
+    let sdk = solana_sdk::ed25519_instruction::new_ed25519_instruction_with_signature(
+        &message,
+        &oracle.sign_message(&message).into(),
+        &oracle.pubkey().to_bytes(),
+    );
+    let ours = common::ed25519_ix(&message, &[&oracle]);
+    assert_eq!(ours.program_id, sdk.program_id);
+    assert_eq!(ours.data, sdk.data);
+}
+
+#[test]
+fn a_two_signer_ed25519_instruction_matches_the_js_side() {
+    let destination = keypair_from_seed(&[9u8; 32]).unwrap().pubkey();
+    let a = keypair_from_seed(&[5u8; 32]).unwrap();
+    let b = keypair_from_seed(&[6u8; 32]).unwrap();
+    let message = streamed_coin::claim_message(4242, &destination, 1_700_000_000, 3);
+    let ix = common::ed25519_ix(&message, &[&a, &b]);
+    let hex: String = ix.data.iter().map(|b| format!("{b:02x}")).collect();
+    assert_eq!(hex, "02003e00ffff1e00ffffde005800ffff9e00ffff7e00ffffde005800ffff6e7a1cdd29b0b78fd13af4c5598feff4ef2a97166e3ca6f2e4fbfccd80505bf11f4cb0b5d26763eeda60842030c2a5b54713420d1a6f1d51620251adcbdf2bb7d3ff16dc4cb897a1cdb25ba2b61566d07733da7ac7978d4535480454df9665048a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f177bfa2c0428e115a3e33e3278bdf0f78fd3a39f1fe5ea262af97b7a27f18fe0028821318fd827f4e90a949c359d9b8475a6d3389051156ffb1cf8e2cb60a7eb039210000000000000fd1724385aa0c75b64fb78cd602fa1d991fdebf76b13c58ed702eac835e9f61800f1536500000000030000000000000024898889896884b95dec034b882336013e6bb60c7df01b2a5cad39acc0a5cdf2");
+}
+
 #[test]
 fn pda_fixtures_match_the_js_side() {
     let program: Pubkey = streamed_coin::ID;

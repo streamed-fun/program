@@ -35,6 +35,16 @@
 export const EVENT_IX_TAG = 'e445a52e51cb9a1d';
 export const TRADE_EVENT_DISC = 'bddb7fd34ee661ee';
 export const COIN_CREATED_DISC = '2645d99da6e2dffa';
+// The claim flow (§3.4), sha256("event:<Name>")[0..8] like the two above:
+//   ClaimInitiatedEvent: kick_user_id u64 ‖ mint 32 ‖ destination 32 ‖
+//                        unlock_at i64 ‖ oracle_epoch u64 ‖ claim_nonce u64   (96 bytes)
+//   ClaimFinalizedEvent: kick_user_id u64 ‖ mint 32 ‖ destination 32 ‖ amount u64 (80 bytes)
+//   ClaimVetoedEvent:    kick_user_id u64 ‖ mint 32 ‖ claim_nonce u64           (48 bytes)
+// ClaimInitiated is the one somebody has to watch: the window between it and
+// unlock_at is the only time a wrong claim can be vetoed.
+export const CLAIM_INITIATED_DISC = 'a307a68e65b19861';
+export const CLAIM_FINALIZED_DISC = '1e5558005330e717';
+export const CLAIM_VETOED_DISC = 'b6f3a110946c5130';
 
 const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 const B58_MAP = Object.fromEntries([...B58].map((c, i) => [c, BigInt(i)]));
@@ -103,6 +113,10 @@ function writer(size) {
       view.setBigUint64(at, BigInt(v), true);
       at += 8;
     },
+    i64(v) {
+      view.setBigInt64(at, BigInt(v), true);
+      at += 8;
+    },
     done() {
       if (at !== size) throw new Error(`wrote ${at} of ${size}`);
       return buf;
@@ -125,8 +139,44 @@ function reader(bytes) {
       at += 8;
       return v;
     },
+    i64() {
+      const v = view.getBigInt64(at, true);
+      at += 8;
+      return v;
+    },
     left: () => bytes.length - at
   };
+}
+
+export function encodeClaimInitiatedEvent({ kickUserId, mint, destination, unlockAt, oracleEpoch, claimNonce }) {
+  const w = writer(8 + 96);
+  w.bytes(fromHex(CLAIM_INITIATED_DISC));
+  w.u64(kickUserId);
+  w.bytes(fromBase58(mint));
+  w.bytes(fromBase58(destination));
+  w.i64(unlockAt);
+  w.u64(oracleEpoch);
+  w.u64(claimNonce);
+  return w.done();
+}
+
+export function encodeClaimFinalizedEvent({ kickUserId, mint, destination, amount }) {
+  const w = writer(8 + 80);
+  w.bytes(fromHex(CLAIM_FINALIZED_DISC));
+  w.u64(kickUserId);
+  w.bytes(fromBase58(mint));
+  w.bytes(fromBase58(destination));
+  w.u64(amount);
+  return w.done();
+}
+
+export function encodeClaimVetoedEvent({ kickUserId, mint, claimNonce }) {
+  const w = writer(8 + 48);
+  w.bytes(fromHex(CLAIM_VETOED_DISC));
+  w.u64(kickUserId);
+  w.bytes(fromBase58(mint));
+  w.u64(claimNonce);
+  return w.done();
 }
 
 // mint/trader are base58 address strings; amounts are BigInt base units.
@@ -189,6 +239,34 @@ export function decodeEvent(bytes) {
       gradBarLamports: r.u64(),
       gradBarClaimedLamports: r.u64(),
       virtualSolReserves: r.u64()
+    };
+  }
+  if (disc === CLAIM_INITIATED_DISC && r.left() === 96) {
+    return {
+      type: 'claimInitiated',
+      kickUserId: r.u64(),
+      mint: toBase58(r.bytes(32)),
+      destination: toBase58(r.bytes(32)),
+      unlockAt: r.i64(),
+      oracleEpoch: r.u64(),
+      claimNonce: r.u64()
+    };
+  }
+  if (disc === CLAIM_FINALIZED_DISC && r.left() === 80) {
+    return {
+      type: 'claimFinalized',
+      kickUserId: r.u64(),
+      mint: toBase58(r.bytes(32)),
+      destination: toBase58(r.bytes(32)),
+      amount: r.u64()
+    };
+  }
+  if (disc === CLAIM_VETOED_DISC && r.left() === 48) {
+    return {
+      type: 'claimVetoed',
+      kickUserId: r.u64(),
+      mint: toBase58(r.bytes(32)),
+      claimNonce: r.u64()
     };
   }
   return null;

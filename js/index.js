@@ -30,14 +30,34 @@ export {
   decodeCurve
 } from './program.js';
 export {
+  ED25519_PROGRAM,
+  INSTRUCTIONS_SYSVAR,
+  CLAIM_MESSAGE_LEN,
+  CLAIM_UNCLAIMED,
+  CLAIM_PENDING,
+  CLAIM_CLAIMED,
+  claimMessage,
+  ed25519VerifyIx,
+  initiateClaimIx,
+  finalizeClaimIx,
+  vetoClaimIx,
+  buildInitiateClaimTransaction
+} from './claim.js';
+export {
   EVENT_IX_TAG,
   TRADE_EVENT_DISC,
   COIN_CREATED_DISC,
+  CLAIM_INITIATED_DISC,
+  CLAIM_FINALIZED_DISC,
+  CLAIM_VETOED_DISC,
   toBase58,
   fromBase58,
   fromHex,
   encodeTradeEvent,
   encodeCoinCreatedEvent,
+  encodeClaimInitiatedEvent,
+  encodeClaimFinalizedEvent,
+  encodeClaimVetoedEvent,
   decodeEvent,
   eventsFromTransaction
 } from './events.js';
