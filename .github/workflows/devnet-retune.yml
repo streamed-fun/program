@@ -1,9 +1,21 @@
 # Retunes the program's Global settings on devnet. Manual trigger only.
 #
-# Only the graduation bars are exposed as inputs, because they are the settings
-# a test network wants different from production: a bar a few wallets can reach
-# lets every state of a coin be exercised. Everything else in Global is read from
-# the chain and carried forward unchanged (see scripts/init-global.mjs).
+# The graduation bars are exposed because they are the settings a test network
+# wants different from production: a bar a few wallets can reach lets every
+# state of a coin be exercised. The oracle set is exposed because the claim
+# flow cannot work without three DISTINCT keys in the three slots — a Global
+# initialized from a single ORACLE_ADDRESSES entry puts one key in all three,
+# which meets no threshold above one and refuses every claim. Everything else
+# in Global is read from the chain and carried forward unchanged (see
+# scripts/init-global.mjs).
+#
+# ⚠️ Changing the oracle set increments `oracle_epoch`, which cancels every
+# claim that is mid-timelock. That is deliberate (spec §3.4) and it applies to
+# a routine rotation exactly as it does to an incident. Claimants re-initiate
+# with a fresh attestation; nothing is lost but the wait.
+#
+# ⭐ Only PUBLIC oracle addresses are passed here. The signing halves belong
+# wherever the oracle service keeps them and never reach this workflow.
 #
 # Required repo secret:
 #   DEVNET_DEPLOYER_KEYPAIR - the keypair that initialized Global; it is
@@ -27,6 +39,10 @@ on:
         description: 'Graduation bar once the streamer has claimed, in SOL (must not exceed grad_bar)'
         required: true
         default: '0.85'
+      oracles:
+        description: 'Three DISTINCT oracle addresses, comma separated. Leave blank to keep the current set. Rotating them cancels every pending claim.'
+        required: false
+        default: ''
       dry_run:
         description: 'Print what would change and send nothing'
         type: boolean
@@ -53,11 +69,13 @@ jobs:
           DEVNET_DEPLOYER_KEYPAIR: ${{ runner.temp }}/deployer.json
           GRAD_BAR: ${{ inputs.grad_bar }}
           GRAD_BAR_CLAIMED: ${{ inputs.grad_bar_claimed }}
+          ORACLES: ${{ inputs.oracles }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          extra=""
-          if [ "$DRY_RUN" = "true" ]; then extra="--dry-run"; fi
-          node scripts/init-global.mjs --update --grad-bar "$GRAD_BAR" --grad-bar-claimed "$GRAD_BAR_CLAIMED" $extra
+          set -- --update --grad-bar "$GRAD_BAR" --grad-bar-claimed "$GRAD_BAR_CLAIMED"
+          if [ -n "$ORACLES" ]; then set -- "$@" --oracles "$ORACLES"; fi
+          if [ "$DRY_RUN" = "true" ]; then set -- "$@" --dry-run; fi
+          node scripts/init-global.mjs "$@"
       - name: Remove the staged key
         if: ${{ always() }}
         run: rm -f "$RUNNER_TEMP/deployer.json"

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { changedFields, retuneParams, solToLamports } from './retune.js';
+import { changedFields, retuneParams, rotatesOracles, solToLamports } from './retune.js';
 
 const existing = {
   authority: 'AUTH',
@@ -74,4 +74,40 @@ test('the program-side bounds on the bars are checked before anything is sent', 
 
 test('a misspelled field is an error rather than a no-op', () => {
   assert.throws(() => retuneParams(existing, { gradBar: 1n }), /no parameter gradBar/);
+});
+
+// The configuration `initialize_global` lands in when ORACLE_ADDRESSES names
+// one address: every slot the same key. The program counts distinct signers,
+// so a threshold of two can never be met and every claim is refused — quietly,
+// until a real streamer tries. It fails here instead.
+test('fewer distinct oracle keys than the threshold is refused before anything is sent', () => {
+  const oneKey = { ...existing, oraclePubkeys: ['O1', 'O1', 'O1'] };
+  assert.throws(() => retuneParams(oneKey), /only 1 distinct key is in the three slots/);
+  // Even a retune that only touches the bars reports it, because the Global it
+  // would write is still unusable.
+  assert.throws(
+    () => retuneParams(oneKey, { gradBarLamports: 1_000_000_000n, gradBarClaimedLamports: 850_000_000n }),
+    /--oracles/
+  );
+  // Two distinct keys meet a threshold of two; the third slot may repeat.
+  assert.doesNotThrow(() => retuneParams({ ...existing, oraclePubkeys: ['O1', 'O2', 'O2'] }));
+  // A threshold of one is satisfiable with one key, so it passes.
+  assert.doesNotThrow(() => retuneParams({ ...oneKey, oracleThreshold: 1 }));
+  // The fix, in one flag, and it changes nothing else.
+  const fixed = retuneParams(oneKey, { oraclePubkeys: ['O1', 'O2', 'O3'] });
+  assert.deepEqual(fixed.oraclePubkeys, ['O1', 'O2', 'O3']);
+  assert.deepEqual(changedFields(oneKey, fixed), ['oraclePubkeys']);
+});
+
+test('there are exactly three oracle slots', () => {
+  assert.throws(() => retuneParams(existing, { oraclePubkeys: ['O1', 'O2'] }), /exactly three/);
+});
+
+// The program increments oracle_epoch on any oracle change, and that cancels
+// every pending claim at once. A caller has to be told before sending.
+test('an oracle change is reported as the rotation it is', () => {
+  const before = retuneParams(existing);
+  assert.equal(rotatesOracles(before, retuneParams(existing, { gradBarLamports: 1n, gradBarClaimedLamports: 1n })), false);
+  assert.equal(rotatesOracles(before, retuneParams(existing, { oraclePubkeys: ['O1', 'O2', 'O9'] })), true);
+  assert.equal(rotatesOracles(before, retuneParams(existing, { oracleThreshold: 3 })), true);
 });
