@@ -17,6 +17,14 @@
 # ⭐ Only PUBLIC oracle addresses are passed here. The signing halves belong
 # wherever the oracle service keeps them and never reach this workflow.
 #
+# ⛔ EVERY INPUT IS OPTIONAL AND BLANK MEANS "LEAVE IT ALONE". The graduation
+# bars used to be required with devnet defaults filled in, so a run that only
+# meant to rotate the oracle set would also have quietly moved the bars from
+# whatever was on chain to 1 / 0.85. `update_global` takes the whole parameter
+# set, which makes every unmentioned field a silent write unless something
+# carries it forward — scripts/init-global.mjs reads the live Global and does
+# exactly that.
+#
 # Required repo secret:
 #   DEVNET_DEPLOYER_KEYPAIR - the keypair that initialized Global; it is
 #                             Global.authority and the only key update_global
@@ -32,13 +40,13 @@ on:
   workflow_dispatch:
     inputs:
       grad_bar:
-        description: 'Graduation bar in SOL collected (new coins only)'
-        required: true
-        default: '1'
+        description: 'Graduation bar in SOL collected (new coins only). Blank keeps the current value.'
+        required: false
+        default: ''
       grad_bar_claimed:
-        description: 'Graduation bar once the streamer has claimed, in SOL (must not exceed grad_bar)'
-        required: true
-        default: '0.85'
+        description: 'Graduation bar once the streamer has claimed, in SOL (must not exceed grad_bar). Blank keeps the current value.'
+        required: false
+        default: ''
       oracles:
         description: 'Three DISTINCT oracle addresses, comma separated. Leave blank to keep the current set. Rotating them cancels every pending claim.'
         required: false
@@ -77,7 +85,9 @@ jobs:
           CLAIM_DELAY: ${{ inputs.claim_delay_seconds }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          set -- --update --grad-bar "$GRAD_BAR" --grad-bar-claimed "$GRAD_BAR_CLAIMED"
+          set -- --update
+          if [ -n "$GRAD_BAR" ]; then set -- "$@" --grad-bar "$GRAD_BAR"; fi
+          if [ -n "$GRAD_BAR_CLAIMED" ]; then set -- "$@" --grad-bar-claimed "$GRAD_BAR_CLAIMED"; fi
           if [ -n "$ORACLES" ]; then set -- "$@" --oracles "$ORACLES"; fi
           if [ -n "$CLAIM_DELAY" ]; then set -- "$@" --claim-delay "$CLAIM_DELAY"; fi
           if [ "$DRY_RUN" = "true" ]; then set -- "$@" --dry-run; fi
