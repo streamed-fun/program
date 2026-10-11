@@ -453,8 +453,13 @@ public for `claim_delay_seconds` before any tokens move, and cancellable through
 sees a claim they did not start has that long to tell us.
 
 **Operational obligation this creates:** somebody has to watch `ClaimInitiated` events and be able
-to convene the multisig within the delay. A veto power nobody monitors is worth nothing. This is a
-staffing commitment, not just code — see the application's rollout plan.
+to convene the multisig within the delay. A veto power nobody monitors is worth nothing.
+
+`npm run program:veto` sends the instruction and `-- --list` shows every claim currently inside a
+window, both answerable from this repository alone — an incident tool that needs a separate system
+to tell it what to act on is a weak one. Sending is opt-in (`--confirm`); the default prints the
+destination wallet and the time remaining and stops. **What remains is the staffing half**: being
+able to send a veto is not the same as somebody noticing in time to send one.
 
 **Trade-off, stated plainly:** every legitimate streamer now waits `claim_delay_seconds` between
 logging in and holding their tokens. For a once-per-streamer action on a coin they did not know
