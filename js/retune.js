@@ -6,6 +6,16 @@
 
 export const LAMPORTS_PER_SOL = 1_000_000_000n;
 
+/// The in-program floors from §3.1, mirrored so a retune fails here with a
+/// sentence rather than on chain with `BadGlobalParam`.
+///
+/// The delay floor is not a tuning preference: the veto window is a public
+/// promise, and a multisig able to set it to zero could rush a claim through
+/// before anyone could object. 24h is as short as the program will ever go,
+/// which also makes it the shortest possible end-to-end test.
+export const MIN_CLAIM_DELAY_SECONDS = 86_400n;
+export const MIN_CLAIM_CAP_PER_PERIOD = 1;
+
 const PARAM_FIELDS = [
   'creatorAuthority',
   'oraclePubkeys',
@@ -46,11 +56,53 @@ export function retuneParams(existing, overrides = {}) {
     params[key] = key in overrides ? overrides[key] : existing[key];
   }
   params.oraclePubkeys = [...params.oraclePubkeys];
+  if (params.oraclePubkeys.length !== 3) throw new Error('there are exactly three oracle slots');
+  if (params.claimDelaySeconds < MIN_CLAIM_DELAY_SECONDS) {
+    throw new Error(
+      `claim_delay_seconds is ${params.claimDelaySeconds} and the program's floor is ` +
+        `${MIN_CLAIM_DELAY_SECONDS} (24h) — the veto window is a public promise and cannot be shortened past it`
+    );
+  }
+  if (params.claimPeriodSeconds < 1n) throw new Error('claim_period_seconds must be positive');
+  if (params.claimCapPerPeriod < MIN_CLAIM_CAP_PER_PERIOD) {
+    throw new Error(`claim_cap_per_period must be at least ${MIN_CLAIM_CAP_PER_PERIOD}; 0 would halt every claim`);
+  }
   if (params.gradBarLamports < 1n) throw new Error('graduation bar must be at least 1 lamport');
   if (params.gradBarClaimedLamports < 1n || params.gradBarClaimedLamports > params.gradBarLamports) {
     throw new Error('claimed graduation bar must be between 1 lamport and the unclaimed bar');
   }
+  // ⛔ The threshold counts DISTINCT keys, on chain and here. One address
+  // repeated across the slots is not 2-of-3 with extra steps — it is a
+  // configuration under which no attestation can ever pass, and the program
+  // rejects every claim rather than counting one signer twice. That is the
+  // safe direction, and it is also silent: nothing fails until a real streamer
+  // tries to claim, which is the worst moment to find out. So it fails here
+  // instead, where the fix is one flag.
+  //
+  // The check is on the resulting params rather than on the override, so a
+  // retune that changes only the bars still reports a Global that was
+  // initialized this way.
+  const distinct = new Set(params.oraclePubkeys).size;
+  if (distinct < params.oracleThreshold) {
+    throw new Error(
+      `oracle_threshold is ${params.oracleThreshold} but only ${distinct} distinct ` +
+        `${distinct === 1 ? 'key is' : 'keys are'} in the three slots, so no claim could ever be ` +
+        'attested — pass --oracles with distinct addresses'
+    );
+  }
   return params;
+}
+
+/// Whether a retune rotates the oracle set, which the program answers by
+/// incrementing `oracle_epoch` — and that cancels every in-flight claim
+/// (spec §3.4). Worth saying out loud before sending, because it is a side
+/// effect of the change rather than something the caller asked for.
+export function rotatesOracles(before, after) {
+  const changed =
+    before.oracleThreshold !== after.oracleThreshold ||
+    before.oraclePubkeys.length !== after.oraclePubkeys.length ||
+    before.oraclePubkeys.some((k, i) => k !== after.oraclePubkeys[i]);
+  return changed;
 }
 
 /// The fields whose value differs between two param sets, for printing.

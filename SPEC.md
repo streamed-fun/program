@@ -189,14 +189,21 @@ non-decreasing across trades (ceil rounding on the token side never lets it fall
 | `create_coin(kick_user_id, name, symbol, uri)` | `creator_authority` + the buyer as `payer` | **Blocklist gate (off-chain, mandatory): the backend checks the blocklist before submitting, with no exceptions — not for Index additions, not for fan-triggered first buys, not for streamer claims. After a mint exists there is no remedy but delisting from our own site; D5 and D9 mean the token, its name and its image are permanent and keep trading on a venue we built. Pre-mint is the only point where "no" is possible.** Enforces `name <= 32 bytes` and `symbol <= 10 bytes` (Metaplex limits, counted in **bytes not characters** — a short Kick display name with emoji can exceed both and would fail the CPI mid-create); sanitize off-chain and reject in-program. Creates the mint (6 decimals), mints `token_total_supply`, splits into `creator_vault` (15%) and `token_vault` (85%), creates Metaplex metadata via CPI, sets mint authority to `None`, never sets freeze authority (D5), initializes `Curve` with `real_sol_reserves = 0` and `token_reserves = 85% of supply`. **Metadata is immutable (`is_mutable: false`) and its `uri` is an IPFS CID served through a gateway (D21)** — nothing about a coin's identity is editable after this returns, including by us. **There is no price argument of any kind (D20 revised):** every coin opens at `Global.default_virtual_sol_reserves` and bakes `Global`'s graduation bars into its `Curve`, so this instruction cannot be used to open a coin anywhere else, and the baked bars are echoed in `CoinCreatedEvent`. **Called only ever bundled with a `buy` in the same transaction (§3.6); no coin is created without a first buyer paying for it.** |
 | `buy(sol_in, min_tokens_out)` | trader (permissionless) | See §3.3. Creates the trader's ATA if needed, payer = trader. |
 | `sell(tokens_in, min_sol_out)` | trader (permissionless) | See §3.3. |
-| `initiate_claim(kick_user_id, destination, expiry)` | destination wallet (+ any fee payer) | **Not implemented.** Starts the claim. Full detail in §3.4. |
-| `finalize_claim(kick_user_id)` | anyone (permissionless; `relayer` pays) | **Not implemented.** Completes it after the timelock. §3.4. |
-| `veto_claim(kick_user_id)` | `authority` (multisig) | **Not implemented.** Cancels a pending claim during the timelock. §3.4. |
+| `initiate_claim(kick_user_id, expiry)` | destination wallet (+ any fee payer) | Starts the claim. `destination` is the signing account rather than an argument, so the wallet that signs is the wallet the vault is promised to. Requires an `Ed25519Program` instruction immediately before it. Full detail in §3.4. |
+| `finalize_claim(kick_user_id)` | anyone (permissionless; `relayer` pays) | Completes it after the timelock. §3.4. |
+| `veto_claim(kick_user_id)` | `authority` (multisig) | Cancels a pending claim during the timelock. §3.4. |
 | `migrate(kick_user_id)` | anyone (permissionless) | **Not implemented.** Graduates the coin to its destination venue once the threshold is met. §3.5. |
 
-The deployed program has five instructions: `initialize_global`, `update_global`, `create_coin`,
-`buy` and `sell`. The four marked above are specified here so the account layouts carry their shape
-now, and are added in a later phase. `idl.json` is the authority on what exists today.
+The program has eight instructions: `initialize_global`, `update_global`, `create_coin`, `buy`,
+`sell`, `initiate_claim`, `finalize_claim` and `veto_claim`. `migrate` is specified here so the
+account layouts carry its shape now, and is added in a later phase.
+
+`idl.json` describes the interface an explorer decodes transactions with, and it is **regenerated
+and published at deploy time** by `npm run program:idl` — which needs the Anchor CLI to build it and
+the upgrade authority to publish it. The committed copy therefore describes the last published
+interface, not necessarily this source: **after adding or changing an instruction, an account or an
+event, regenerate it in the same change as the deploy.** The source is the authority on what the
+program does; the IDL is the authority on what the chain has been told it does.
 
 No `pause` instruction, no per-wallet cap parameter anywhere (D9). No `admin_withdraw` from a curve's
 vaults — treasury only ever receives the fee share, streamed out during `buy`/`sell`, never a lump
@@ -327,13 +334,10 @@ transaction into a detected, alarmed gap instead of silent drift.
 
 ### 3.4 The claim flow
 
-**Not implemented.** Specified here so the account layouts carry its shape; no instruction below exists in the deployed program.
-
 **Everything below assumes the coin already exists on chain, and under D7 most will
 not when the streamer arrives.** A claim on an unminted coin is free and off-chain by decision, and
-it does not trigger creation. That path has no mechanism yet: see the open items below and the
-write-up in
-the project's economics notes.
+it does not trigger creation. That path has no on-chain mechanism and needs none: see the open items
+below and the write-up in the project's economics notes.
 
 Three instructions. The split exists because the
 oracle keys are the largest realistic loss path in this system: whoever holds them can attest any
@@ -344,12 +348,16 @@ Note the destination-wallet signature is **not** a defence against oracle compro
 attests to a wallet they control and signs with it. It defends against typos and against an
 attestation being used by someone other than its intended recipient. Nothing more.
 
-**`initiate_claim(kick_user_id, destination, expiry)`**
+**`initiate_claim(kick_user_id, expiry)`**
 
 Signers: `destination` (proves live key possession) + `relayer` (fee payer, D12).
 
-Requires a preceding `Ed25519Program` instruction in the same transaction carrying **at least
-`Global.oracle_threshold` signatures over the identical message**:
+`destination` is an account rather than an argument. The wallet that signs is the wallet the
+attestation must name, so the two cannot disagree: presenting somebody else's attestation builds a
+different message and fails the signature check rather than a separate equality check.
+
+Requires an `Ed25519Program` instruction **immediately preceding** this one in the same transaction,
+carrying **at least `Global.oracle_threshold` signatures over the identical message**:
 
 ```
 kick_user_id ‖ destination ‖ expiry ‖ curve.claim_nonce ‖ program_id
@@ -358,7 +366,24 @@ kick_user_id ‖ destination ‖ expiry ‖ curve.claim_nonce ‖ program_id
 Byte encoding, pinned by the reference implementation
 (mirrored by the application's attestation module): `kick_user_id` u64 LE, `destination` 32 raw
 bytes, `expiry` i64 LE (unix seconds), `claim_nonce` u64 LE, `program_id` 32 raw bytes — 88 bytes
-total. The program's sysvar introspection must reconstruct these exact bytes.
+total. The program's sysvar introspection reconstructs these exact bytes from its own state and
+compares them to what was signed, so a claim is refused rather than misread when any byte differs.
+
+**What the program reads out of the Ed25519 instruction.** The precompile has already verified every
+signature in it, or the transaction would not be running; what is left is *what* was signed and *by
+whom*. Its data is a signature count, a padding byte, one 14-byte offsets record per signature, then
+the payload those offsets point into. Every instruction index in every record must be `u16::MAX`
+("this instruction"): a record pointing into another instruction's data describes a layout the
+handler does not follow, and is refused rather than resolved. Every record's message must be the 88
+bytes above exactly — a bundle carrying one signature over something else fails the whole
+instruction rather than merely not counting, because such a bundle is not one to trust.
+
+**The threshold counts distinct keys, and a key counts once.** The same oracle signing twice is one
+signature, and so is one key occupying two slots of `oracle_pubkeys`. **A `Global` whose three slots
+hold fewer distinct keys than `oracle_threshold` can never have a claim attested against it.** That
+is the safe direction, and it is silent: nothing fails until a real streamer tries. `initialize_global`
+can land in exactly that state when it is given a single oracle address, so the retune tooling
+refuses to write such a `Global` and says which flag fixes it.
 
 **This flow has an executable reference implementation and a live rehearsal.**
 The application's claim state machine is the state machine below check-for-check, with

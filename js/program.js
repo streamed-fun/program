@@ -12,7 +12,9 @@ export const PROGRAM_ID = '3TdK7cTcmTQwZuZfJyDQqHLe6kyqRXQif2eCF1jDG7k5';
 export const TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 export const ATA_PROGRAM = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL';
 
-const ixDisc = (name) => sha256(new TextEncoder().encode(`global:${name}`)).subarray(0, 8);
+// Anchor's instruction discriminator. Exported for claim.js, which builds the
+// claim instructions with the same writer and the same derivation.
+export const ixDisc = (name) => sha256(new TextEncoder().encode(`global:${name}`)).subarray(0, 8);
 
 const kidBytes = (kickUserId) => {
   const b = new Uint8Array(8);
@@ -40,7 +42,7 @@ export function ata(owner, mint) {
   ).address;
 }
 
-function writer() {
+export function writer() {
   const parts = [];
   return {
     bytes: (b) => parts.push(Uint8Array.from(b)),

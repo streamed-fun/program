@@ -8,6 +8,8 @@
 //   npm run program:init                                   # devnet, initialize if absent
 //   npm run program:init -- --update --grad-bar 1 --grad-bar-claimed 0.85
 //   npm run program:init -- --update --grad-bar 1 --dry-run
+//   npm run program:init -- --update --oracles A,B,C       # rotate the oracle set
+//   npm run program:init -- --update --claim-delay 86400    # the 24h floor, for devnet testing
 //   npm run program:init -- --url https://api.mainnet-beta.solana.com
 //
 // A retune reads the Global that is there and changes only the flags given.
@@ -28,7 +30,7 @@
 
 import { keypairFromSeed, buildTransaction } from '../js/tx.js';
 import { initializeGlobalIx, updateGlobalIx, decodeGlobal, pdas, PROGRAM_ID } from '../js/program.js';
-import { retuneParams, changedFields, solToLamports } from '../js/retune.js';
+import { retuneParams, changedFields, rotatesOracles, solToLamports } from '../js/retune.js';
 import { loadDevVars, keypairBytes } from './devvars.mjs';
 
 loadDevVars();
@@ -107,6 +109,16 @@ const describe = (g) => {
   console.log(`  fee ${g.feeBps}bps, creator share ${g.creatorShareBps}bps`);
   console.log(`  opening reserve ${fmtSol(g.defaultVirtualSolReserves)}`);
   console.log(`  graduation ${fmtSol(g.gradBarLamports)} collected, ${fmtSol(g.gradBarClaimedLamports)} claimed`);
+  console.log(
+    `  claim delay ${g.claimDelaySeconds}s (${(Number(g.claimDelaySeconds) / 3600).toFixed(1)}h), ` +
+      `cap ${g.claimCapPerPeriod} per ${g.claimPeriodSeconds}s`
+  );
+  const distinct = new Set(g.oraclePubkeys).size;
+  console.log(`  oracles ${distinct}-of-${g.oraclePubkeys.length} distinct, threshold ${g.oracleThreshold}`);
+  for (const [i, key] of g.oraclePubkeys.entries()) console.log(`    [${i}] ${key}`);
+  if (distinct < g.oracleThreshold) {
+    console.log('    ⚠️ fewer distinct keys than the threshold: no claim can be attested against this');
+  }
 };
 
 const existing = await readGlobal();
@@ -127,15 +139,35 @@ if (update) {
   const overrides = {};
   if (flag('grad-bar')) overrides.gradBarLamports = solToLamports(flag('grad-bar'));
   if (flag('grad-bar-claimed')) overrides.gradBarClaimedLamports = solToLamports(flag('grad-bar-claimed'));
+  // Three addresses, comma separated, in slot order. The public halves only —
+  // this script never sees an oracle's signing key, and never needs to.
+  if (flag('oracles')) {
+    const keys = flag('oracles').split(',').map((s) => s.trim()).filter(Boolean);
+    if (keys.length !== 3) {
+      console.error(`\n--oracles takes exactly three addresses, got ${keys.length}`);
+      process.exit(1);
+    }
+    overrides.oraclePubkeys = keys;
+  }
+  if (flag('oracle-threshold')) overrides.oracleThreshold = Number(flag('oracle-threshold'));
+  // The veto window, in seconds. The program floors it at 24h and refuses
+  // anything shorter, so this cannot be used to rush a claim through — what it
+  // is for is devnet, where 48h makes an end-to-end test take two days.
+  if (flag('claim-delay')) overrides.claimDelaySeconds = BigInt(flag('claim-delay'));
+  if (flag('claim-cap')) overrides.claimCapPerPeriod = Number(flag('claim-cap'));
+  console.log('\ncurrent');
+  describe(existing);
   try {
     params = retuneParams(existing, overrides);
   } catch (err) {
     console.error(`\n${err.message}`);
     process.exit(1);
   }
-  const changed = changedFields(retuneParams(existing), params);
-  console.log('\ncurrent');
-  describe(existing);
+  // Compared against the decoded Global directly rather than against
+  // `retuneParams(existing)`: the point of a retune may be to fix a Global
+  // that retuneParams would refuse to produce, and the baseline must not
+  // throw on the very state being repaired.
+  const changed = changedFields(existing, params);
   if (!changed.length) {
     console.log('\nno flags given, so nothing would change. Nothing sent.');
     process.exit(0);
@@ -143,6 +175,17 @@ if (update) {
   console.log('\nafter');
   describe(params);
   console.log(`\nchanging: ${changed.join(', ')}. Every other value is carried forward as is.`);
+  // Not a side note. The program increments `oracle_epoch` on any oracle
+  // change, and `finalize_claim` refuses a claim whose epoch no longer
+  // matches — so this cancels every claim that is mid-timelock. That is the
+  // designed incident response (§3.4) and it is also what a routine rotation
+  // does, which is why it is printed rather than assumed understood.
+  if (rotatesOracles(existing, params)) {
+    console.log(
+      `\n⚠️ this rotates the oracle set, so oracle_epoch goes ${existing.oracleEpoch} -> ${existing.oracleEpoch + 1n}` +
+        ' and EVERY pending claim is cancelled. Claimants re-initiate with a fresh attestation.'
+    );
+  }
   if (payer && existing.authority !== payer.publicKey) {
     console.error(`\nthe loaded key ${payer.publicKey} is not Global.authority ${existing.authority}; the program would reject this.`);
     process.exit(1);
